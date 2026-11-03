@@ -238,6 +238,7 @@ impl Platformer {
         self.latch.jump_pressed |= intent.jump_pressed;
         self.latch.dash_pressed |= intent.dash_pressed;
         self.latch.dive_pressed |= intent.dive_pressed;
+        self.latch.custom_pressed |= intent.custom_pressed;
         self.acc += dt;
         let n = ((self.acc / DT) as u32).min(MAX_STEPS);
         self.acc = (self.acc - n as f32 * DT).clamp(0.0, DT);
@@ -246,6 +247,7 @@ impl Platformer {
                 jump_pressed: self.latch.jump_pressed,
                 dash_pressed: self.latch.dash_pressed,
                 dive_pressed: self.latch.dive_pressed,
+                custom_pressed: self.latch.custom_pressed,
                 ..intent
             };
             self.latch = Intent::default();
@@ -360,14 +362,17 @@ impl Platformer {
         self.preset
     }
 
-    /// Switch to `preset`'s feel (and, with game-toolkit, its controls), keeping the
-    /// character where it is.
+    /// Switch to `preset`'s feel (and, with game-toolkit, its controls, keeping your custom
+    /// buttons), keeping the character where it is.
     pub fn set_preset(&mut self, preset: Preset) {
         self.preset = Some(preset);
         self.world.tuning = preset.tuning();
         #[cfg(feature = "toolkit")]
         {
+            // The game's own buttons stay bound.
+            let custom = self.controls.scheme.custom;
             self.controls = Controls::for_preset(preset);
+            self.controls.scheme.custom = custom;
         }
     }
 }
@@ -403,6 +408,46 @@ mod tests {
                 .any(|e| matches!(e, Event::Jumped { .. }))
         );
         assert_eq!(hero.state(), "takeoff");
+    }
+
+    #[test]
+    fn custom_presses_are_latched_like_the_built_in_ones() {
+        /// The game's attack button.
+        const ATTACK: u8 = 3;
+        let mut level = Level::demo();
+        let mut hero = Platformer::on(&level, Preset::Precise);
+        let press = Intent {
+            custom: 1 << ATTACK,
+            custom_pressed: 1 << ATTACK,
+            ..Intent::default()
+        };
+        assert_eq!(hero.advance(press, &mut level, 0.0), 0);
+        assert!(hero.latch.pressed(ATTACK), "kept for the next step");
+        hero.advance(Intent::default(), &mut level, 1.0 / 60.0);
+        assert!(!hero.latch.pressed(ATTACK), "used up by the step");
+        assert!(press.held(ATTACK) && !press.held(ATTACK + 1));
+    }
+
+    #[cfg(feature = "toolkit")]
+    #[test]
+    fn switching_presets_keeps_the_custom_buttons() {
+        use crate::controls::Custom;
+        use game_toolkit::prelude::Key;
+        let attack = &[Custom {
+            bit: 0,
+            keys: &[Key::KeyX],
+            pad: &[],
+        }];
+        let mut hero = Platformer::builder()
+            .controls(Scheme {
+                custom: attack,
+                ..Scheme::SNAPPY
+            })
+            .build()
+            .unwrap();
+        hero.set_preset(Preset::Precise);
+        assert_eq!(hero.controls.scheme.jump, Scheme::PRECISE.jump);
+        assert_eq!(hero.controls.scheme.custom.len(), 1);
     }
 
     #[test]

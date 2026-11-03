@@ -58,6 +58,8 @@ const RIGHT: Intent = Intent {
     dive_pressed: false,
     sprint: false,
     super_dash: false,
+    custom: 0,
+    custom_pressed: 0,
 };
 
 /// The side (-1, 1) of a wall within 2 px, or 0.

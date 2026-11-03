@@ -23,11 +23,27 @@ pub struct Intent {
     pub sprint: bool,
     /// Super dash is held: charge it (on the ground or a wall); release to launch.
     pub super_dash: bool,
+    /// Your game's own buttons that are held (attack, interact, ...), one bit each; the
+    /// movement ignores them. Bind keys to them with `controls::Scheme::custom`.
+    pub custom: u32,
+    /// Your game's own buttons pressed since the last step, one bit each: latched by the
+    /// `Platformer` like the built-in presses, so none get lost between steps.
+    pub custom_pressed: u32,
 }
 
 impl Intent {
     /// The stick points down.
     pub fn down(&self) -> bool {
         self.move_y > 0.5
+    }
+
+    /// Whether custom button `bit` (0 to 31) is held.
+    pub fn held(&self, bit: u8) -> bool {
+        self.custom & (1 << bit) != 0
+    }
+
+    /// Whether custom button `bit` (0 to 31) was pressed since the last step.
+    pub fn pressed(&self, bit: u8) -> bool {
+        self.custom_pressed & (1 << bit) != 0
     }
 }

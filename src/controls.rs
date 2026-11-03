@@ -19,6 +19,9 @@
 //! Boy's, with sprint as its run button.
 //!
 //! Triggers count when the pad reports them as buttons or only as an analog axis (Z).
+//!
+//! Your game's own buttons (attack, interact, ...) go in [`Scheme::custom`]; they arrive as
+//! bits in [`Intent::custom`] and [`Intent::custom_pressed`].
 
 use game_toolkit::prelude::*;
 
@@ -54,6 +57,34 @@ pub struct Scheme {
     pub super_dash: &'static [Key],
     /// Super dash buttons (held).
     pub super_dash_pad: &'static [Button],
+    /// Your game's own buttons, read into [`Intent::custom`] and
+    /// [`Intent::custom_pressed`]. The built-in schemes have none; add yours with
+    /// `Scheme { custom: &[...], ..Scheme::SNAPPY }`.
+    pub custom: &'static [Custom],
+}
+
+/// A button of your game's own (attack, interact, ...): which [`Intent`] bit, and the keys
+/// and gamepad buttons that set it.
+///
+/// ```
+/// use game_toolkit::prelude::{Button, Key};
+/// use game_toolkit_platformer::controls::{Custom, Scheme};
+///
+/// const ATTACK: u8 = 0;
+/// const SCHEME: Scheme = Scheme {
+///     custom: &[Custom { bit: ATTACK, keys: &[Key::KeyX], pad: &[Button::West] }],
+///     ..Scheme::SNAPPY
+/// };
+/// assert_eq!(SCHEME.custom.len(), 1);
+/// ```
+#[derive(Clone, Copy, Debug)]
+pub struct Custom {
+    /// The bit in [`Intent::custom`] and [`Intent::custom_pressed`], 0 to 31.
+    pub bit: u8,
+    /// Keys.
+    pub keys: &'static [Key],
+    /// Gamepad buttons.
+    pub pad: &'static [Button],
 }
 
 // gilrs names: RightTrigger2 / LeftTrigger2 are the triggers, RightTrigger / LeftTrigger
@@ -75,6 +106,7 @@ impl Scheme {
         sprint_pad: &[Button::West],
         super_dash: &[Key::KeyS],
         super_dash_pad: &[Button::LeftTrigger2],
+        custom: &[],
     };
 
     /// After Celeste's default layout. The precise preset's scheme.
@@ -96,6 +128,7 @@ impl Scheme {
         sprint_pad: &[],
         super_dash: &[],
         super_dash_pad: &[],
+        custom: &[],
     };
 
     /// After Super Meat Boy's: jump, and hold to run. The momentum preset's scheme.
@@ -112,6 +145,7 @@ impl Scheme {
         sprint_pad: &[Button::West, Button::RightTrigger2],
         super_dash: &[],
         super_dash_pad: &[],
+        custom: &[],
     };
 
     /// The control scheme that goes with a feel preset (`None`: Hollow Knight's).
@@ -153,7 +187,18 @@ pub fn read_intent(input: &Input, scheme: &Scheme, triggers: &mut Triggers) -> I
         dive_pressed: false,
         sprint: held(scheme.sprint),
         super_dash: held(scheme.super_dash),
+        custom: 0,
+        custom_pressed: 0,
     };
+    for c in scheme.custom {
+        let bit = 1 << c.bit;
+        if held(c.keys) {
+            i.custom |= bit;
+        }
+        if pressed(c.keys) {
+            i.custom_pressed |= bit;
+        }
+    }
     let mut cast = pressed(scheme.cast);
     if let Some(g) = input.first_gamepad() {
         // Triggers: as buttons, or as the Z axes some pads report instead.
@@ -194,6 +239,15 @@ pub fn read_intent(input: &Input, scheme: &Scheme, triggers: &mut Triggers) -> I
         i.sprint |= held(scheme.sprint_pad);
         i.super_dash |= held(scheme.super_dash_pad);
         cast |= pressed(scheme.cast_pad);
+        for c in scheme.custom {
+            let bit = 1 << c.bit;
+            if held(c.pad) {
+                i.custom |= bit;
+            }
+            if pressed(c.pad) {
+                i.custom_pressed |= bit;
+            }
+        }
     }
     i.dive_pressed = cast && i.down();
     i
