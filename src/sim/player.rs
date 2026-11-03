@@ -49,8 +49,10 @@ pub enum Shove {
     },
 }
 
-/// What the body is busy with, beyond plain running and jumping.
+/// What the body is busy with, beyond plain running and jumping. New moves bring new
+/// modes, so matches need a `_` arm.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Mode {
     /// Free movement.
     Normal,

@@ -1,7 +1,9 @@
 //! [`Event`]: what happened in a step, for animation, sound and effects.
 
 /// How a jump left the ground (or the wall, or the air).
+/// New kinds may come with new moves, so matches need a `_` arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum JumpKind {
     /// From standing or running on the ground.
     Ground,
@@ -17,8 +19,10 @@ pub enum JumpKind {
     Double,
 }
 
-/// Something that happened in one step.
+/// Something that happened in one step. New moves bring new events, so matches need a
+/// `_` arm.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Event {
     /// The hero jumped. `buffered`: the press came before the jump was possible and waited
     /// in the jump buffer.
