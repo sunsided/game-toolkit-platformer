@@ -27,6 +27,15 @@ pub trait Terrain {
     /// Whether `r` overlaps anything solid (walls, floors, ceilings, boxes).
     fn solid(&self, r: Rect) -> bool;
 
+    /// Like [`Terrain::solid`], but not counting box `skip` (an id from
+    /// [`Terrain::pushable`]): a [`Block`](super::Block) asks this while it moves, so it
+    /// doesn't collide with itself. Default: [`Terrain::solid`], which is right for a
+    /// terrain without boxes; one with boxes has to leave `skip` out, or its boxes can't
+    /// move.
+    fn solid_except(&self, r: Rect, _skip: Option<usize>) -> bool {
+        self.solid(r)
+    }
+
     /// Whether `r` stands exactly on top of a one-way platform (its bottom edge on the
     /// platform's top). One-way platforms hold from above, let the character jump up
     /// through them, and drop it on down + jump. Default: there are none.
@@ -40,14 +49,32 @@ pub trait Terrain {
         false
     }
 
-    /// A pushable box at rest that overlaps `r` (the character's side, a unit or two
-    /// out), by an id of your choosing. Default: there are none.
+    /// A pushable box at rest that overlaps `r`, by an id of your choosing. Default:
+    /// there are none.
+    ///
+    /// The contract (see [`super::block`] for a whole terrain with boxes):
+    ///
+    /// - `r` is the character's hitbox shifted one, then two units to the side it pushes
+    ///   or pulls toward, so a box that just moved a unit away still counts. It is only
+    ///   asked while the character stands on the ground.
+    /// - Only boxes at rest count: a falling box isn't pushable.
+    /// - Ids are yours, but keep them stable from step to step: the world compares them to
+    ///   tell whether the character keeps straining against the same box, which is what
+    ///   breaks it loose ([`super::Tuning::push_breakaway`]).
     fn pushable(&self, _r: Rect) -> Option<usize> {
         None
     }
 
-    /// Move box `id` sideways by `dx` units (fractions accumulate) and return the whole
-    /// units it moved; `hero` is the character's body, which it mustn't move into.
+    /// Move box `id` (from [`Terrain::pushable`]) sideways by `dx` units and return the
+    /// whole units it moved, signed. Default: boxes don't move.
+    ///
+    /// - `dx` is a fraction of a unit per step at push speeds: keep the remainder and
+    ///   move whole units when it adds up (as [`Block::shove`](super::Block::shove) does).
+    /// - Stop at anything solid, other boxes included, and at `hero`, the character's
+    ///   body, which the box must not move into.
+    /// - Pushing, the world shoves the box first and then moves the character into the
+    ///   room it made; pulling, it moves the character first and then shoves the box
+    ///   after it by the whole units the character moved.
     fn shove(&mut self, _id: usize, _dx: f32, _hero: Rect) -> i32 {
         0
     }

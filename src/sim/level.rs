@@ -181,11 +181,7 @@ impl Level {
             (r.bottom() - 1).div_euclid(TILE),
         );
         (ty0..=ty1).any(|ty| (tx0..=tx1).any(|tx| self.solid_tile(tx, ty)))
-            || self
-                .blocks
-                .iter()
-                .enumerate()
-                .any(|(i, b)| Some(i) != skip && b.rect().intersects(r))
+            || Block::any_except(&self.blocks, r, skip)
     }
 
     /// Whether `r` stands exactly on top of a one-way platform.
@@ -209,6 +205,10 @@ impl Terrain for Level {
         self.overlaps(r)
     }
 
+    fn solid_except(&self, r: Rect, skip: Option<usize>) -> bool {
+        self.overlaps_except(r, skip)
+    }
+
     fn platform(&self, r: Rect) -> bool {
         self.on_platform(r)
     }
@@ -229,9 +229,7 @@ impl Terrain for Level {
     }
 
     fn pushable(&self, r: Rect) -> Option<usize> {
-        self.blocks
-            .iter()
-            .position(|b| b.grounded && b.rect().intersects(r))
+        Block::pushable(&self.blocks, r)
     }
 
     fn shove(&mut self, id: usize, dx: f32, hero: Rect) -> i32 {
