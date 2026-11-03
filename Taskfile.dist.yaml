@@ -12,9 +12,14 @@ tasks:
     silent: true
 
   run:
-    desc: Run the game on the demo level (PROFILE=debug|release)
+    desc: Run the demo (the Cheesed heroine in a moonlit level; PROFILE=debug|release)
     cmds:
-      - cargo run {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
+      - cargo run -p platformer-demo {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
+
+  minimal:
+    desc: Run the minimal example (a character with the debug look, about 50 lines)
+    cmds:
+      - cargo run --example minimal {{.PROFILE_FLAG}}
 
   screenshot:
     desc: "Save what the window shows after AT seconds (default 2) to OUT, then quit"
@@ -22,27 +27,27 @@ tasks:
       OUT: '{{ .OUT | default "screenshots/window.png" }}'
       AT: '{{ .AT | default "2" }}'
     cmds:
-      - cargo run {{.PROFILE_FLAG}} -- --screenshot {{.OUT}} --at {{.AT}}
+      - cargo run -p platformer-demo {{.PROFILE_FLAG}} -- --screenshot {{.OUT}} --at {{.AT}}
 
   snapshot:
     desc: "Filmstrips of every scripted move, headless, into snapshots/ (or only some: task snapshot -- roll climb)"
     cmds:
-      - cargo run --release --example snapshot -- snapshots {{.CLI_ARGS}}
+      - cargo run -p platformer-demo --release --example snapshot -- snapshots {{.CLI_ARGS}}
 
   poses:
     desc: "The heroine in every sprite pose, one sheet: snapshots/poses.png (or task poses -- <out.png> [scale])"
     cmds:
-      - cargo run --release --example poses -- {{ if .CLI_ARGS }}{{.CLI_ARGS}}{{ else }}snapshots/poses.png{{ end }}
+      - cargo run -p platformer-demo --release --example poses -- {{ if .CLI_ARGS }}{{.CLI_ARGS}}{{ else }}snapshots/poses.png{{ end }}
 
   build:
     desc: Build (PROFILE=debug|release)
     cmds:
-      - cargo build {{.PROFILE_FLAG}} {{.CLI_ARGS}}
+      - cargo build --workspace {{.PROFILE_FLAG}} {{.CLI_ARGS}}
 
   test:
     desc: Run tests (movement rules, determinism, animation controller, hero graph)
     cmds:
-      - cargo test {{.CLI_ARGS}}
+      - cargo test --workspace {{.CLI_ARGS}}
 
   fmt:
     desc: Format sources
@@ -52,10 +57,11 @@ tasks:
   lint:
     desc: Clippy (warnings as errors, includes missing docs)
     cmds:
-      - cargo clippy --all-targets -- -D warnings
+      - cargo clippy --workspace --all-targets -- -D warnings
 
   check:
     desc: fmt --check and clippy -D warnings (run before calling it done)
     cmds:
       - cargo fmt --all --check
-      - cargo clippy --all-targets -- -D warnings
+      - cargo clippy --workspace --all-targets -- -D warnings
+      - cargo clippy -p game-toolkit-platformer --lib --no-default-features -- -D warnings

@@ -1,12 +1,12 @@
-//! Launcher. Everything lives in the library crate; see [`animation::app`].
+//! Launcher. Everything lives in the library crate; see [`platformer_demo::app`].
 //!
 //! Command line (native):
 //!
 //! - `--screenshot <file.png>`: save what the window shows after `--at <secs>` seconds
 //!   (default 2), then quit.
 
-use animation::app::{App, config, screenshot_after};
 use game_toolkit::prelude::*;
+use platformer_demo::app::{App, config, screenshot_after};
 
 /// Parses the command line, sets up logging (native only) and hands the game to the
 /// toolkit's run loop.

@@ -374,7 +374,7 @@ impl Player {
     }
 
     /// On a wall (sliding down it or holding on, as of the last step), refill air jumps
-    /// and, if the tuning says so, dashes: Hollow Knight gives both back on a wall cling.
+    /// and, if the tuning says so, dashes (a design choice: walls as a place to recover).
     fn wall_refill(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
         if self.wall_slide == 0 && self.mode != Mode::Climb {
             return;

@@ -109,15 +109,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "animation"
-version = "0.1.0"
-dependencies = [
- "env_logger",
- "game-toolkit",
- "log",
-]
-
-[[package]]
 name = "anstream"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -934,6 +925,13 @@ dependencies = [
  "gilrs",
  "log",
  "winit",
+]
+
+[[package]]
+name = "game-toolkit-platformer"
+version = "0.1.0"
+dependencies = [
+ "game-toolkit",
 ]
 
 [[package]]
@@ -2171,6 +2169,16 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
+
+[[package]]
+name = "platformer-demo"
+version = "0.1.0"
+dependencies = [
+ "env_logger",
+ "game-toolkit",
+ "game-toolkit-platformer",
+ "log",
+]
 
 [[package]]
 name = "png"

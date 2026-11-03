@@ -3,11 +3,11 @@
 //! `cargo run --example poses -- [out.png] [scale]` (or `task poses`). For checking the
 //! puppet, and as the reference list for anyone drawing real frames.
 
-use animation::gfx::font::{self, Font};
-use animation::gfx::{Canvas, Raster, palette as pal, png};
-use animation::hero::rig::{Air, Rig};
-use animation::hero::sprite::COUNT;
-use animation::render::{KF, Paint, mouse};
+use platformer_demo::gfx::font::{self, Font};
+use platformer_demo::gfx::{Canvas, Raster, palette as pal, png};
+use platformer_demo::hero::rig::{Air, Rig};
+use platformer_demo::hero::sprite::COUNT;
+use platformer_demo::render::{KF, Paint, mouse};
 
 /// Cell size in pixels.
 const CELL: i32 = 28;

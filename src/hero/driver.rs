@@ -1,6 +1,6 @@
 //! [`HeroDriver`]: the simulation's facts and events as the hero graph's parameters.
 
-use crate::anim::{Driver, ParamId, Params};
+use crate::anim::{Driver, ParamId, Params, SpecError};
 use crate::sim::{Event, JumpKind, Mode, Shove, World};
 
 /// Parameter ids of the hero graph, looked up once.
@@ -81,49 +81,56 @@ const SKID_SPEED: f32 = 30.0;
 
 impl HeroDriver {
     /// Look up the hero graph's parameters in `params`. Panics on a missing one: the
-    /// driver and [`super::spec`] belong together.
+    /// driver and [`super::spec`] belong together. For a graph of your own, use
+    /// [`HeroDriver::try_new`].
     pub fn new(params: &Params) -> Self {
+        Self::try_new(params).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// Look up the parameters this driver writes in `params`, or say which one a graph
+    /// doesn't declare. A custom graph has to declare all of them (it may ignore any).
+    pub fn try_new(params: &Params) -> Result<Self, SpecError> {
         let id = |n: &str| {
             params
                 .id(n)
-                .unwrap_or_else(|| panic!("the hero graph declares {n:?}"))
+                .ok_or_else(|| SpecError::UnknownParam(n.to_string().into()))
         };
-        Self {
-            grounded: id("grounded"),
-            skid: id("skid"),
-            rolling: id("rolling"),
-            dashing: id("dashing"),
-            climbing: id("climbing"),
-            slipping: id("slipping"),
-            wall_slide: id("wall_slide"),
-            hard_landing: id("hard_landing"),
-            wings: id("wings"),
-            pushing: id("pushing"),
-            pulling: id("pulling"),
-            holding: id("holding"),
-            gliding: id("gliding"),
-            super_bonk: id("super_bonk"),
-            super_launch: id("super_launch"),
-            super_flying: id("super_flying"),
-            charged: id("charged"),
-            charging: id("charging"),
-            speed: id("speed"),
-            vy: id("vy"),
-            dash_y: id("dash_y"),
-            look: id("look"),
-            jump: id("jump"),
-            double: id("double"),
-            wall_jump: id("wall_jump"),
-            hop: id("hop"),
-            drop: id("drop"),
-            land: id("land"),
-            roll: id("roll"),
-            hard: id("hard"),
-            dash: id("dash"),
-            grab: id("grab"),
-            dive: id("dive"),
-            impact: id("impact"),
-        }
+        Ok(Self {
+            grounded: id("grounded")?,
+            skid: id("skid")?,
+            rolling: id("rolling")?,
+            dashing: id("dashing")?,
+            climbing: id("climbing")?,
+            slipping: id("slipping")?,
+            wall_slide: id("wall_slide")?,
+            hard_landing: id("hard_landing")?,
+            wings: id("wings")?,
+            pushing: id("pushing")?,
+            pulling: id("pulling")?,
+            holding: id("holding")?,
+            gliding: id("gliding")?,
+            super_bonk: id("super_bonk")?,
+            super_launch: id("super_launch")?,
+            super_flying: id("super_flying")?,
+            charged: id("charged")?,
+            charging: id("charging")?,
+            speed: id("speed")?,
+            vy: id("vy")?,
+            dash_y: id("dash_y")?,
+            look: id("look")?,
+            jump: id("jump")?,
+            double: id("double")?,
+            wall_jump: id("wall_jump")?,
+            hop: id("hop")?,
+            drop: id("drop")?,
+            land: id("land")?,
+            roll: id("roll")?,
+            hard: id("hard")?,
+            dash: id("dash")?,
+            grab: id("grab")?,
+            dive: id("dive")?,
+            impact: id("impact")?,
+        })
     }
 }
 

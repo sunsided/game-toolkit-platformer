@@ -7,11 +7,11 @@
 //! This works because nothing below the app layer touches the toolkit: a [`Session`] runs
 //! headless and draws into any raster.
 
-use animation::gfx::font::{self, Font};
-use animation::gfx::{Canvas, H, Raster, W, palette as pal, png};
-use animation::render::{Paint, backdrop, mouse};
-use animation::session::{Overlay, Session};
-use animation::sim::{Intent, Preset, TILE, World, player};
+use platformer_demo::gfx::font::{self, Font};
+use platformer_demo::gfx::{Canvas, H, Raster, W, palette as pal, png};
+use platformer_demo::render::{Paint, backdrop, mouse};
+use platformer_demo::session::{Overlay, Session};
+use platformer_demo::sim::{Intent, Preset, TILE, World, player};
 
 /// Steps between onion-skin copies.
 const EVERY: usize = 5;
@@ -118,7 +118,7 @@ const SCRIPTS: &[Script] = &[
     },
     Script {
         name: "wings",
-        preset: Some(Preset::HollowKnight),
+        preset: Some(Preset::Snappy),
         at: None,
         steps: 150,
         intent: |k, _| {
@@ -132,7 +132,7 @@ const SCRIPTS: &[Script] = &[
     },
     Script {
         name: "glide",
-        preset: Some(Preset::Silksong),
+        preset: Some(Preset::Drifter),
         at: Some((27 * TILE, 5 * TILE - player::H)),
         steps: 300,
         intent: |k, _| Intent {
@@ -248,7 +248,7 @@ const SCRIPTS: &[Script] = &[
     },
     Script {
         name: "wall-scale",
-        preset: Some(Preset::HollowKnight),
+        preset: Some(Preset::Snappy),
         at: Some((25 * TILE, 25 * TILE - player::H)),
         steps: 260,
         intent: |k, w| {
@@ -261,8 +261,8 @@ const SCRIPTS: &[Script] = &[
         },
     },
     Script {
-        name: "meat-boy-bounce",
-        preset: Some(Preset::MeatBoy),
+        name: "momentum-bounce",
+        preset: Some(Preset::Momentum),
         at: Some((27 * TILE, 14 * TILE)),
         steps: 220,
         intent: |k, w| bounce(k, w, -1.0),
@@ -378,7 +378,7 @@ fn main() {
         }
         // The final frame on top: blocks, crystals, effects, the hero where it ended.
         s.overlay = Overlay::Off;
-        animation::render::scene(&mut canvas, &s, &[], 0.0);
+        platformer_demo::render::scene(&mut canvas, &s, &[], 0.0);
         caption(&mut canvas, sc.name, &seen);
         let path = format!("{dir}/{}.png", sc.name);
         std::fs::write(&path, png::encode(&canvas, 3)).expect("write snapshot");

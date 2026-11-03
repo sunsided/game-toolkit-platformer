@@ -1,159 +1,133 @@
-# animation
+# game-toolkit-platformer
 
-A pluggable controller for modern platformers that feel fluid and snappy: movement and animation as two cooperating systems, with a small game around them as the test bench.
+A pluggable platforming controller for [game-toolkit](https://github.com/sunsided/game-toolkit): fluid, snappy movement with presets tuned toward the feel of Celeste, Hollow Knight, Silksong and Super Meat Boy, and an animation state graph that follows it.
 
-![Scaling a single wall with stick-aimed wall jumps, Hollow Knight-like preset](docs/art/wall-scale.png)
+![Scaling a single wall with stick-aimed wall jumps, snappy preset](docs/art/wall-scale.png)
 
-A character that feels as good as the ones in Hollow Knight, Celeste or Super Meat Boy needs movement that is precise and forgiving, and animation that shows every one of its decisions without ever holding one up. The first part is well documented by now; the second usually ends up as a pile of conditionals in the player script. Here the animation is a state graph of named parameters, clips, conditions and priorities, compiled, validated, and run by an animator that doesn't know what it animates, and the movement is a deterministic simulation that only reports what happened.
+A character that feels good needs movement that is precise and forgiving, and animation that shows every one of its decisions without ever holding one up. This crate gives you both as one `Platformer`: pick a preset, feed it input, draw what it tells you. Underneath, the movement and the animation controller are separate layers you can tune, replace or use on their own.
 
-It is written in Rust on [game-toolkit](https://github.com/sunsided/game-toolkit), but the two systems use neither the toolkit nor any other dependency, so they carry over to other engines.
+## Quick start
 
-## What's in it
-
-| Layer | Where | What it does |
-|---|---|---|
-| Movement | `src/sim/` | A fixed-step (120 Hz), deterministic body: an `Intent` in per step, `Event`s out (jumped, landed, dashed, ...). All feel numbers and ability switches live in `Tuning`; `Preset`s set them toward one game each. |
-| Animation controller | `src/anim/` | Generic: parameters, clips, conditions, a graph spec compiled into a validated graph, an `Animator`, and a `Driver` trait that feeds it. |
-| Binding | `src/hero/` | The glue for one character: its graph (36 states), its sprite numbers and poses, and the driver that turns movement facts and events into graph parameters. |
-| Test bench | `src/render/`, `src/app/` | The game: drawing, input, the debug overlay. Replace this part with your own. |
-
-## Using it in your platformer
-
-The crate isn't published; use it as a git dependency or copy `src/anim/` (and `src/sim/` if you want the movement too). Both compile on `std` alone.
-
-### The animation controller
-
-A graph is written by name and compiled; every name is checked, and a parameter used as the wrong kind fails here rather than on the first frame that needs it:
-
-```rust
-use animation::anim::{Animator, Clip, Cond, GraphSpec, Playback, StateSpec, TransitionSpec};
-
-let graph = GraphSpec::new()
-    .float("speed")
-    .trigger("jump", 0.05)
-    .state(StateSpec::new("idle", Clip::uniform(Playback::PingPong, &[0, 1], 0.5)))
-    .state(
-        StateSpec::new("run", Clip::uniform(Playback::Loop, &[2, 3, 4, 5], 0.08).marker(0, "step"))
-            .rate_by("speed", 90.0, 0.4, 1.6),
-    )
-    .state(StateSpec::new("takeoff", Clip::uniform(Playback::Once, &[7], 0.06)).then("idle"))
-    .transition(TransitionSpec::new(["idle"], "run", Cond::Above("speed".into(), 10.0)))
-    .transition(TransitionSpec::new(["run"], "idle", Cond::Below("speed".into(), 10.0)))
-    .transition(TransitionSpec::any("takeoff", Cond::Trigger("jump".into())).priority(70).breaks_lock())
-    .compile()?;
-let mut animator = Animator::new(Arc::new(graph));
+```toml
+[dependencies]
+game-toolkit = "0.10"
+game-toolkit-platformer = { git = "https://github.com/sunsided/game-toolkit-platformer" }
 ```
 
-Each step, set the parameters (or let a `Driver` do it), call `animator.update(dt)`, draw `animator.sprite()`, and take `animator.drain_events()` for markers like `"step"`. What it adds over a plain state machine:
-
-- Triggers with a time to live: an event fired while a state is locked isn't lost; it waits until a transition consumes it or expires. Input queueing, on the animation side.
-- Locks and priorities: a state can refuse all but lock-breaking transitions for a while, and the highest-priority transition wins, so an impact beats a landing.
-- Clip rates and markers: a run cycle keeps pace with the speed, a climb stops when the body does, and markers drive footstep sounds, dust or anything else.
-- Names as `Cow<'static, str>`: free for graphs written in code, owned for graphs built from data.
-
-### The movement
-
 ```rust
-use animation::sim::{Intent, Level, Preset, World};
+use game_toolkit::prelude::*;
+use game_toolkit_platformer::prelude::*;
 
-let mut world = World::new(Level::demo(), Preset::Celeste.tuning());
-world.step(&Intent { move_x: 1.0, jump_pressed: true, jump_held: true, ..Intent::default() });
-for event in &world.events { /* Jumped, Landed, Dashed, RollStarted, ... */ }
+struct MyGame {
+    hero: Platformer,
+}
+
+impl Game for MyGame {
+    fn init(_ctx: &mut Context) -> Result<Self> {
+        Ok(Self { hero: Platformer::new(Level::demo(), Preset::Precise) })
+    }
+
+    fn update(&mut self, ctx: &mut Context, dt: f32) {
+        self.hero.update(&ctx.input, dt);
+        for event in self.hero.drain_events() {
+            match event {
+                Event::Jumped { .. } => { /* a sound */ }
+                Event::Landed { drop, .. } if drop > 48 => { /* a thud, some dust */ }
+                _ => {}
+            }
+        }
+    }
+
+    fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
+        let mut p = frame.painter(&mut ctx.gfx);
+        p.clear([0.05, 0.04, 0.12, 1.0]);
+        self.hero.draw_debug(&mut p, [0.0, 0.0], 3.0);
+    }
+}
 ```
 
-Step it at a fixed `DT` and latch button presses between steps, so a press in a frame without a step isn't lost (`src/session.rs` does both). Your own level goes in as ASCII rows (`Level::parse`), your own feel as a `Tuning`.
+That's a playable character (this code is also a doc test, so it compiles): keyboard and gamepad with the preset's own control scheme, the demo level, and a debug look (the level as blocks, the character as a box colored by animation state). The full version is `examples/minimal.rs`: `cargo run --example minimal`, F2 cycles the presets.
 
-### Connecting the two
+## Configuration
 
-The pattern that keeps the graph readable: events enter states through triggers, continuous facts keep or leave them through bools and floats. `src/hero/driver.rs` is a complete example, and the per-step loop is three lines:
+Everything goes through the builder:
 
 ```rust
-world.step(&intent);
-driver.drive(&world, &mut animator.params);
-animator.update(DT);
+let hero = Platformer::builder(Level::demo())
+    .preset(Preset::Snappy)                // feel and controls
+    .tune(|t| {                            // then adjust any number
+        t.air_jumps = 2;
+        t.dash_speed = 260.0;
+    })
+    .controls(Scheme::PRECISE)             // or another control scheme
+    .spawn_at(40, 160)
+    .build()?;
 ```
 
-To add a move: give the simulation a mode or rule and an `Event` (with a test), add a trigger or bool and a state with its transitions to the graph, map the event in the driver, and give the new sprite numbers a pose. `docs/animation.md` has the details.
+| Preset | Feel | Tuned toward | Controls (keyboard / pad) |
+|---|---|---|---|
+| `Hybrid` | everything on | | Z jump, C dash, S super dash, D grab, down + A dive, Shift sprint / A, RT, LT, LB, down + B, X |
+| `Precise` | precise and floaty: 8-way dash, climbing with stamina, no air jump | Celeste | C jump, X dash, Z grab / A, X, triggers |
+| `Snappy` | hard jump cut, double jump, sideways dash, super dash, dive, slipping wall cling | Hollow Knight | as hybrid |
+| `Drifter` | snappy, plus a glide after the double jump | Hollow Knight: Silksong | as hybrid |
+| `Momentum` | walk or hold to run, momentum, strong wall jumps, wall stick | Super Meat Boy | Space jump, Shift run / A, X |
 
-### Your art
+The presets lean toward each game's feel by ear; they are not measured copies. `Tuning` has every number and ability switch (about 80, each documented), and `set_preset` switches the feel at runtime.
 
-The graph only names sprite numbers. Draw them however you like: this repository draws a cut-out puppet (`src/render/mouse.rs`, with `src/hero/pose.rs` saying what each number means for the body); a sprite sheet would map each number to a cell instead.
+Levels are tile grids: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `B` box, `P` spawn), so a tilemap converts in a few lines.
+
+## Drawing your character
+
+Each frame, draw sprite `hero.sprite()` at `hero.position()` (units, interpolated between the fixed steps), mirrored by `hero.facing()`. The sprite numbers are listed in `hero::sprite`: 78 poses from idle to super dash, so map them to cells of your sheet. `hero.state()` names the animation state, `drain_anim_events()` gives you its markers (`"step"` on each footstep) for sounds and dust.
+
+To change the animation itself, pass your own graph with `.graph(spec)`; start from `hero::spec()`, the built-in one (36 states). The builder tells you if your graph lacks a parameter the movement drives.
 
 ## The moves
 
-Everything the movement does, each tunable and each animated:
-
-- jumping: a jump buffer, coyote time, variable height, a jump cut on release, hangtime at the apex, and a heavier fall,
-- in the air: a double jump, a glide after it, 8-way dashes with recharge from the ground, walls or pickups, and a dive,
-- on walls: sliding, sticking, stick-aimed wall jumps that can scale a single wall, and climbing with stamina and a firm or slipping grip,
-- on the ground: running and sprinting, rolls out of high landings or a sprint, hard landings, a charged super dash, drop-through platforms, and looking up and down,
-- with boxes: pushing and pulling, with a little static friction,
-- details: corner correction and a skid when turning around.
+- jumping: a jump buffer, coyote time, variable height, a jump cut, hangtime at the apex, a heavier fall,
+- in the air: a double jump, a glide, 8-way dashes with recharge, a dive,
+- on walls: sliding, sticking, stick-aimed wall jumps that can scale a wall, climbing with stamina,
+- on the ground: running and sprinting, rolls, hard landings, a charged super dash, drop-through platforms, looking up and down,
+- with boxes: pushing and pulling,
+- details: corner correction, a skid when turning.
 
 | | |
 |---|---|
-| ![Super dash across the floor, ending in a bonk](docs/art/super-dash.png) | ![Glide after the double jump, Silksong-like preset](docs/art/glide.png) |
+| ![Super dash across the floor, ending in a bonk](docs/art/super-dash.png) | ![Glide after the double jump, drifter preset](docs/art/glide.png) |
 | ![Bouncing up the narrow chimney](docs/art/chimney-bounce.png) | ![Push, hold and pull a box](docs/art/push-pull.png) |
 
-The pictures are filmstrips (`task snapshot`): a scripted move played headless, with the animation states it went through as the caption.
+## Under the hood
 
-### Feel presets
-
-Starting points for your own `Tuning`. They lean toward each game by feel; they are not measured copies.
-
-| Preset | What it's like |
+| Module | What it does |
 |---|---|
-| hybrid (default) | everything on, Celeste-like numbers with Hollow Knight's heavier fall and jump cut |
-| celeste-like | precise and floaty: 8-way dash, climbing with stamina, no air jump, no jump cut |
-| hollow-knight-like | snappy: instant run, hard jump cut, double jump, sideways dash, super dash, slipping wall cling, dive |
-| silksong-like | Hollow Knight's feel with a glide after the double jump |
-| meat-boy-like | walk or hold to run, momentum, strong wall jumps, wall stick |
+| `sim` | The movement: a fixed-step (120 Hz), deterministic body, an `Intent` in per step and `Event`s out. |
+| `anim` | The animation controller, independent of any game: parameters (triggers that wait while a state is locked), clips with rates and markers, conditions, a validated graph, the `Animator`. |
+| `hero` | The built-in character: its graph, sprite numbers, and the driver from movement to graph parameters. |
+| `controls` | game-toolkit input to an `Intent`, through a `Scheme` per preset. |
 
-## Trying it
+With `default-features = false`, the crate drops game-toolkit and depends on nothing but std: use `sim` and `anim` in any engine. `docs/` describes the movement rules and the animation graph in detail.
 
-```sh
-task run
-```
+## The demo
 
-Arrows, left stick or d-pad move. The buttons follow the preset (F2 switches both; the overlay's corner shows the keys):
-
-| Action | Hollow Knight-like, Silksong-like, hybrid | Celeste-like | Meat Boy-like |
-|---|---|---|---|
-| jump (hold for height) | Z, Space / A | C, Space / A, Y | Space, Z / A |
-| dash | C / RT | X / X, B | |
-| super dash (hold, release) | S / LT | | |
-| grab (hold) | D / LB | Z / RT, LT, RB, LB | |
-| dive | down + A / down + B, down + RB | | |
-| sprint / run (hold) | Shift / X | | Shift, X / X, RT |
-
-The less obvious ones: roll by landing from 6 tiles or more while holding a direction (or by tapping down while sprinting); scale a wall by wall-jumping with the stick toward it; charge the super dash until she flashes, then let go; drop through a thin platform with down + jump; pull a box with grab held while walking away.
-
-![The compact debug overlay](docs/art/overlay.png)
-
-For inspecting the animation: F1 cycles the overlay (state, frame, lock, timers, active parameters, events), P pauses, `.` steps one 1/120 s frame, `[` and `]` change speed down to 1/16, and F3 switches to a diagnostic look (state-colored blocks on a plain backdrop).
-
-## Building
+`demo/` is the test bench: the heroine of my game Cheesed as a cut-out puppet in a moonlit level, with an overlay for the animation state, slow motion and single steps, and headless filmstrips of every move (the pictures above).
 
 ```sh
-task test         # movement rules, determinism, controller, hero graph, doc examples
-task snapshot     # filmstrips of every scripted move into snapshots/
-task poses        # the character in every sprite pose, one sheet
-task check        # fmt + clippy, warnings as errors
+task run          # the demo
+task minimal      # the minimal example
+task test         # all tests, doc examples included
+task check        # fmt + clippy, with and without game-toolkit
 ```
 
-You'll need Rust 1.95 or newer and [go-task](https://taskfile.dev); plain `cargo run` and `cargo test` work too.
-
-## The test bench
-
-The test character is the mouse heroine of my game Cheesed, a cut-out puppet with a simulated cape, tail and mane, in a moonlit scene with moss and grass that react to her.
+You'll need Rust 1.95 or newer and [go-task](https://taskfile.dev) (or plain `cargo`).
 
 ## Current limitations
 
 - Graphs and tunings are written in code; loading them from files (and hot-reloading) is next.
-- No hand-drawn frames, no sound, no camera (a single screen), and no attack move yet.
-
-The design notes are in [docs/](docs/vision.md): the vision, the movement rules, the animation graph, and the roadmap.
+- A sprite sheet adapter (sprite numbers to Aseprite tags) isn't there yet; `draw_debug` and the demo's puppet are the two looks so far.
+- No attack move, no camera.
 
 ## License
 
-EUPL-1.2, as declared in `Cargo.toml`.
+EUPL-1.2.
+
+This is an independent project, not affiliated with or endorsed by the makers of the games it mentions for comparison; their names belong to their owners.

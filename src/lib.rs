@@ -1,27 +1,97 @@
-//! A small retro platformer built around a pluggable, configurable animation controller.
+//! A pluggable platforming controller for [game-toolkit](https://github.com/sunsided/game-toolkit):
+//! fluid, snappy movement with feel presets, and an animation state graph that follows it.
 //!
-//! Everything except [`app`] is free of toolkit types, so it unit tests and renders
-//! headlessly (see `examples/snapshot.rs`):
+//! The quickest start is [`Platformer`]: pick a preset, call `update` each frame, draw
+//! `sprite()` at `position()` (or call `draw_debug` until there is art). Underneath, three
+//! layers you can also use on their own:
 //!
-//! - [`sim`]: the deterministic simulation: tiles, the hero's movement (run, jump with
-//!   buffer, coyote time, hangtime and cut, double jump, wall slide/jump, climb, 8-way
-//!   dash, dive, land-and-roll, drop-through platforms, dash crystals).
-//! - [`anim`]: the animation controller, independent of the game: parameters, clips,
-//!   conditions, a named graph spec compiled into a validated graph, the animator.
-//! - [`hero`]: the hero's binding: its animation graph and the driver from the sim.
-//! - [`session`]: a game in progress: fixed-step clock with slow motion, pause and
-//!   stepping, input latching, world plus animator.
-//! - [`gfx`]: the 384x216 pixel grid: [`gfx::Raster`], CPU [`gfx::Canvas`], GPU-bound
-//!   [`gfx::DrawList`], palette and bitmap fonts.
-//! - [`render`]: draws a session: the cached backdrop, the hero, the debug overlay.
-//! - [`app`]: the game-toolkit glue: window, input, presenting.
+//! - [`sim`]: the movement. A fixed-step, deterministic body: an [`sim::Intent`] in per
+//!   step, [`sim::Event`]s out. Every feel number and ability switch is in [`sim::Tuning`];
+//!   [`sim::Preset`]s set them toward the feel of Celeste, Hollow Knight, Silksong or
+//!   Super Meat Boy (an independent project, not affiliated with those games' makers).
+//! - [`anim`]: the animation controller, independent of any game: parameters, clips,
+//!   conditions, a graph spec compiled into a validated graph, the animator, drivers.
+//! - [`hero`]: the binding between them for one character: the built-in graph, its sprite
+//!   numbers, and the driver that turns movement into graph parameters.
 //!
-//! See `docs/` for the design.
+//! With the `toolkit` feature (on by default), [`controls`] reads game-toolkit's keyboard
+//! and gamepad through per-preset control schemes. Without it, nothing here depends on
+//! anything but std.
+//!
+//! A complete game with a playable character:
+//!
+//! ```no_run
+//! # #[cfg(feature = "toolkit")] {
+//! use game_toolkit::prelude::*;
+//! use game_toolkit_platformer::prelude::*;
+//!
+//! struct MyGame {
+//!     hero: Platformer,
+//! }
+//!
+//! impl Game for MyGame {
+//!     fn init(_ctx: &mut Context) -> Result<Self> {
+//!         Ok(Self { hero: Platformer::new(Level::demo(), Preset::Precise) })
+//!     }
+//!
+//!     fn update(&mut self, ctx: &mut Context, dt: f32) {
+//!         self.hero.update(&ctx.input, dt);
+//!         for event in self.hero.drain_events() {
+//!             match event {
+//!                 Event::Jumped { .. } => { /* a sound */ }
+//!                 Event::Landed { drop, .. } if drop > 48 => { /* a thud, some dust */ }
+//!                 _ => {}
+//!             }
+//!         }
+//!     }
+//!
+//!     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
+//!         let mut p = frame.painter(&mut ctx.gfx);
+//!         p.clear([0.05, 0.04, 0.12, 1.0]);
+//!         self.hero.draw_debug(&mut p, [0.0, 0.0], 3.0);
+//!     }
+//! }
+//!
+//! run::<MyGame>(AppConfig::default()).unwrap();
+//! # }
+//! ```
+//!
+//! Configured through the builder:
+//!
+//! ```
+//! # #[cfg(feature = "toolkit")] {
+//! use game_toolkit_platformer::prelude::*;
+//!
+//! let hero = Platformer::builder(Level::demo())
+//!     .preset(Preset::Snappy)
+//!     .tune(|t| {
+//!         t.air_jumps = 2;
+//!         t.dash_speed = 260.0;
+//!     })
+//!     .controls(Scheme::PRECISE)
+//!     .spawn_at(40, 160)
+//!     .build()
+//!     .unwrap();
+//! assert_eq!(hero.world.tuning.air_jumps, 2);
+//! # }
+//! ```
 
 pub mod anim;
-pub mod app;
-pub mod gfx;
+#[cfg(feature = "toolkit")]
+pub mod controls;
+#[cfg(feature = "toolkit")]
+mod debug_draw;
 pub mod hero;
-pub mod render;
-pub mod session;
+pub mod platformer;
 pub mod sim;
+
+pub use platformer::{Builder, Platformer};
+
+/// Everything a game needs to get started: `use game_toolkit_platformer::prelude::*;`.
+pub mod prelude {
+    pub use crate::anim::{AnimEvent, GraphSpec};
+    #[cfg(feature = "toolkit")]
+    pub use crate::controls::{Controls, Scheme};
+    pub use crate::platformer::{Builder, Platformer};
+    pub use crate::sim::{Event, Intent, JumpKind, Level, Preset, Tile, Tuning};
+}

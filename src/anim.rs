@@ -25,7 +25,7 @@
 //!
 //! ```
 //! use std::sync::Arc;
-//! use animation::anim::{Animator, Clip, Cond, GraphSpec, Playback, StateSpec, TransitionSpec};
+//! use game_toolkit_platformer::anim::{Animator, Clip, Cond, GraphSpec, Playback, StateSpec, TransitionSpec};
 //!
 //! let graph = GraphSpec::new()
 //!     .float("speed")

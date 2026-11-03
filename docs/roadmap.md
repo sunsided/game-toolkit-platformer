@@ -26,9 +26,13 @@
 - [x] Twinkling stars; moss and grass that sway in the wind and react to her (footstep
   markers, landings, dashes)
 
+- [x] Library and demo split: `game-toolkit-platformer` with a `Platformer` facade, a
+  builder, control schemes per preset, a debug draw, a minimal example
+
 ## Next
 
 - [ ] Specs from data: serde + RON for `GraphSpec` and `Tuning`, hot reload while playing
+- [ ] A sprite sheet adapter: sprite numbers to Aseprite tags, drawn with game-toolkit
 - [ ] Hand-drawn frames for the heroine: Aseprite sheets (toolkit `aseprite` feature),
   sprite numbers to cells; her expressions as a portrait; an attack for the sword
 - [ ] Layers: an upper-body / overlay layer (attacks over running), additive squash and

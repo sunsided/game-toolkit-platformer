@@ -7,9 +7,9 @@
 //! The loop, each fixed step: the simulation, then the driver, then the animator.
 //!
 //! ```
-//! use animation::anim::{Animator, Driver};
-//! use animation::hero::{HeroDriver, graph};
-//! use animation::sim::{DT, Intent, Level, Tuning, World};
+//! use game_toolkit_platformer::anim::{Animator, Driver};
+//! use game_toolkit_platformer::hero::{HeroDriver, graph};
+//! use game_toolkit_platformer::sim::{DT, Intent, Level, Tuning, World};
 //!
 //! let mut world = World::new(Level::demo(), Tuning::default());
 //! let mut animator = Animator::new(graph());
@@ -25,8 +25,6 @@
 
 pub mod driver;
 pub mod graph;
-pub mod pose;
-pub mod rig;
 pub mod sprite;
 
 pub use driver::HeroDriver;

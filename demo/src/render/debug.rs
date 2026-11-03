@@ -191,10 +191,10 @@ fn log(r: &mut dyn Raster, s: &Session, full: bool) {
 /// The keyboard legend of the preset's control scheme (mirrors `app::controls`).
 fn keys(p: Option<Preset>) -> &'static str {
     match p {
-        Some(Preset::Celeste) => "C JUMP X DASH Z GRAB",
-        Some(Preset::MeatBoy) => "SPACE JUMP SHIFT RUN",
-        Some(Preset::Silksong) => "Z JUMP, HOLD: GLIDE C DASH",
-        Some(Preset::HollowKnight) => "Z JUMP C DASH S SUPER DN+A DIVE",
+        Some(Preset::Precise) => "C JUMP X DASH Z GRAB",
+        Some(Preset::Momentum) => "SPACE JUMP SHIFT RUN",
+        Some(Preset::Drifter) => "Z JUMP, HOLD: GLIDE C DASH",
+        Some(Preset::Snappy) => "Z JUMP C DASH S SUPER DN+A DIVE",
         _ => "Z JUMP C DASH S SUPER D GRAB DN+A DIVE SHIFT SPRINT",
     }
 }

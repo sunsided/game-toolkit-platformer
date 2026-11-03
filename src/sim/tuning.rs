@@ -10,37 +10,38 @@
 pub enum Preset {
     /// Everything on: the default.
     Hybrid,
-    /// Precise and floaty: 8-way dash, climbing with stamina, no air jump, no cut.
-    Celeste,
+    /// Precise and floaty: 8-way dash, climbing with stamina, no air jump, no jump cut
+    /// (tuned toward the feel of Celeste).
+    Precise,
     /// Snappy: instant run, hard jump cut, double jump, horizontal dash, wall cling that
-    /// slips, dive, super dash, hard landings.
-    HollowKnight,
+    /// slips, dive, super dash, hard landings (tuned toward the feel of Hollow Knight).
+    Snappy,
     /// Fast and slippery: walk or hold to run, momentum, strong wall jumps, wall stick,
-    /// nothing else.
-    MeatBoy,
-    /// Hollow Knight's sequel: double jump (Faydown Cloak), then a glide on holding jump
-    /// (Drifter's Cloak); sideways dash, wall jumps, no dive.
-    Silksong,
+    /// nothing else (tuned toward the feel of Super Meat Boy).
+    Momentum,
+    /// Snappy with a double jump that leads into a glide while jump is held; sideways dash,
+    /// wall jumps, no dive (tuned toward the feel of Hollow Knight: Silksong).
+    Drifter,
 }
 
 impl Preset {
     /// Every preset, in cycling order.
     pub const ALL: [Preset; 5] = [
         Preset::Hybrid,
-        Preset::Celeste,
-        Preset::HollowKnight,
-        Preset::Silksong,
-        Preset::MeatBoy,
+        Preset::Precise,
+        Preset::Snappy,
+        Preset::Drifter,
+        Preset::Momentum,
     ];
 
     /// Display name.
     pub fn name(self) -> &'static str {
         match self {
             Preset::Hybrid => "hybrid",
-            Preset::Celeste => "celeste-like",
-            Preset::HollowKnight => "hollow-knight-like",
-            Preset::MeatBoy => "meat-boy-like",
-            Preset::Silksong => "silksong-like",
+            Preset::Precise => "precise",
+            Preset::Snappy => "snappy",
+            Preset::Momentum => "momentum",
+            Preset::Drifter => "drifter",
         }
     }
 
@@ -56,7 +57,7 @@ impl Preset {
         let never = i32::MAX;
         match self {
             Preset::Hybrid => base,
-            Preset::Celeste => Tuning {
+            Preset::Precise => Tuning {
                 fall_gravity: 1.0,
                 jump_cut: 1.0,
                 air_jumps: 0,
@@ -72,7 +73,7 @@ impl Preset {
                 super_dash: false,
                 ..base
             },
-            Preset::HollowKnight => Tuning {
+            Preset::Snappy => Tuning {
                 run_speed: 83.0,
                 run_accel: 4000.0,
                 turn_accel: 4000.0,
@@ -94,15 +95,15 @@ impl Preset {
                 sprint: false,
                 ..base
             },
-            Preset::Silksong => Tuning {
+            Preset::Drifter => Tuning {
                 dive: false,
                 super_dash: false,
                 glide: true,
                 run_roll: false,
                 wings: false,
-                ..Preset::HollowKnight.tuning()
+                ..Preset::Snappy.tuning()
             },
-            Preset::MeatBoy => Tuning {
+            Preset::Momentum => Tuning {
                 // Walk, and hold the run button to run, as in Super Meat Boy.
                 run_speed: 90.0,
                 sprint_speed: 160.0,

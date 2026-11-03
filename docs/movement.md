@@ -68,9 +68,9 @@ unreachable drop (`roll_drop`, `hard_land_drop`).
 | Preset | Character |
 |---|---|
 | hybrid | everything on (default) |
-| celeste-like | no air jump, no cut, no dive, no roll; climb, 8-way dash |
-| hollow-knight-like | instant run, hard cut, double jump shown as wings, sideways dash, super dash, cling-and-slide (no grab), dive, hard landings |
-| silksong-like | Hollow Knight's feel with a glide after the double jump (flip, not wings); no dive |
-| meat-boy-like | walk, hold to run (fast, momentum), strong wall jumps, wall stick; no dash, no double, no climb |
+| precise (toward Celeste) | no air jump, no cut, no dive, no roll; climb, 8-way dash |
+| snappy (toward Hollow Knight) | instant run, hard cut, double jump shown as wings, sideways dash, super dash, cling-and-slide (no grab), dive, hard landings |
+| drifter (toward Silksong) | Hollow Knight's feel with a glide after the double jump (flip, not wings); no dive |
+| momentum (toward Super Meat Boy) | walk, hold to run (fast, momentum), strong wall jumps, wall stick; no dash, no double, no climb |
 
 These lean toward each game's feel; they are not measured copies of it.

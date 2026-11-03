@@ -1,0 +1,20 @@
+[package]
+name = "platformer-demo"
+version = "0.1.0"
+description = "The test bench for game-toolkit-platformer: the Cheesed heroine in a moonlit level, with a debug overlay, slow motion and headless filmstrips."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[dependencies]
+game-toolkit-platformer = { path = ".." }
+game-toolkit = "0.10"
+log = "0.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11"
+
+[lints]
+workspace = true

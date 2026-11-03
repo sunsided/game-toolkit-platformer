@@ -15,7 +15,8 @@ use game_toolkit::prelude::*;
 use crate::gfx::{DrawList, H, W};
 use crate::render;
 use crate::session::{Session, Skin};
-use controls::{Scheme, Triggers, read_intent, read_keys};
+use controls::read_keys;
+use game_toolkit_platformer::controls::{Controls, Scheme};
 use screenshots::Screenshots;
 use viewport::Viewport;
 
@@ -45,8 +46,8 @@ pub struct App {
     clock: f32,
     /// F12 and command-line screenshots.
     shots: Screenshots,
-    /// The gamepad triggers last frame.
-    triggers: Triggers,
+    /// Movement input, through the current preset's control scheme.
+    controls: Controls,
     /// The look the backdrop texture was drawn for; F3 switches it.
     drawn_for: Skin,
     /// The backdrop's visible stars, which twinkle.
@@ -98,7 +99,7 @@ impl Game for App {
                 auto: SCREENSHOT.get().cloned(),
                 ..Screenshots::default()
             },
-            triggers: Triggers::default(),
+            controls: Controls::default(),
             drawn_for: Skin::Mouse,
             stars,
         })
@@ -111,8 +112,9 @@ impl Game for App {
         if ctx.input.key_pressed(Key::Escape) {
             ctx.quit();
         }
-        let scheme = Scheme::of(self.session.preset);
-        let intent = read_intent(&ctx.input, &scheme, &mut self.triggers);
+        // F2 switches the preset, and with it the controls.
+        self.controls.scheme = Scheme::of(self.session.preset);
+        let intent = self.controls.read(&ctx.input);
         self.session.update(dt, intent, &read_keys(&ctx.input));
     }
 

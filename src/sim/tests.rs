@@ -724,7 +724,7 @@ fn a_tired_grip_slips_and_cannot_climb() {
 
 #[test]
 fn the_wall_stick_turns_away_and_jump_into_a_wall_jump() {
-    let t = Preset::MeatBoy.tuning();
+    let t = Preset::Momentum.tuning();
     let mut w = at_wall(1..15, 3 * TILE, t);
     let into = Intent {
         move_x: 1.0,
@@ -766,7 +766,7 @@ fn the_wall_stick_turns_away_and_jump_into_a_wall_jump() {
 
 #[test]
 fn presets_switch_abilities_off() {
-    let mut w = World::new(room(&[]), Preset::MeatBoy.tuning());
+    let mut w = World::new(room(&[]), Preset::Momentum.tuning());
     jump(&mut w, 10, 0);
     let ev = run(
         &mut w,
@@ -787,7 +787,7 @@ fn presets_switch_abilities_off() {
         "{ev:?}"
     );
 
-    let mut w = World::new(room(&[]), Preset::HollowKnight.tuning());
+    let mut w = World::new(room(&[]), Preset::Snappy.tuning());
     jump(&mut w, 10, 0);
     let ev = run(
         &mut w,
@@ -1037,7 +1037,7 @@ fn scale_wall(t: Tuning, steps: usize) -> i32 {
 
 #[test]
 fn wall_jumps_toward_the_wall_scale_it() {
-    for p in [Preset::Hybrid, Preset::HollowKnight, Preset::MeatBoy] {
+    for p in [Preset::Hybrid, Preset::Snappy, Preset::Momentum] {
         let gained = scale_wall(p.tuning(), 300);
         assert!(gained > 60, "{}: gained only {gained} px", p.name());
     }
@@ -1161,7 +1161,7 @@ fn a_wall_gives_the_air_jump_back() {
 
 #[test]
 fn celeste_walls_do_not_give_the_dash_back() {
-    let mut w = at_wall(1..15, 3 * TILE, Preset::Celeste.tuning());
+    let mut w = at_wall(1..15, 3 * TILE, Preset::Precise.tuning());
     w.player.dashes = 0;
     run(
         &mut w,
@@ -1173,7 +1173,7 @@ fn celeste_walls_do_not_give_the_dash_back() {
     );
     assert_eq!(w.player.wall_slide, 1);
     assert_eq!(w.player.dashes, 0);
-    let mut w = at_wall(1..15, 3 * TILE, Preset::HollowKnight.tuning());
+    let mut w = at_wall(1..15, 3 * TILE, Preset::Snappy.tuning());
     w.player.dashes = 0;
     run(
         &mut w,
@@ -1225,7 +1225,7 @@ fn blocks_stick_before_they_budge() {
 
 #[test]
 fn holding_a_jump_pressed_in_the_air_glides() {
-    let t = Preset::Silksong.tuning();
+    let t = Preset::Drifter.tuning();
     let mut w = World::new(room(&[]), t);
     // A ground jump held through its apex does not glide: that's hangtime.
     jump(&mut w, 25, 0);
@@ -1346,8 +1346,12 @@ fn sprinting_raises_the_top_speed_where_the_preset_has_it() {
     let t = Tuning::default();
     assert!((top(t, false) - t.run_speed).abs() < 1.0);
     assert!((top(t, true) - t.sprint_speed).abs() < 1.0);
-    let hk = Preset::HollowKnight.tuning();
-    assert_eq!(top(hk, true), top(hk, false), "no sprint in Hollow Knight");
+    let hk = Preset::Snappy.tuning();
+    assert_eq!(
+        top(hk, true),
+        top(hk, false),
+        "no sprint in the snappy preset"
+    );
 }
 
 /// Hold super dash for `steps` steps, then let go; the events.
@@ -1428,11 +1432,11 @@ fn a_super_dash_charged_on_a_wall_launches_away_from_it() {
     let ev = charge(&mut w, 110);
     assert!(ev.contains(&Event::SuperDashStarted { dir: -1 }), "{ev:?}");
     assert!(w.player.y - y <= 2, "held on the wall while charging");
-    let mut w = World::new(room(&[]), Preset::Celeste.tuning());
+    let mut w = World::new(room(&[]), Preset::Precise.tuning());
     run(&mut w, Intent::default(), 3);
     let ev = charge(&mut w, 110);
     assert!(
         !ev.contains(&Event::SuperCharged),
-        "no Crystal Heart in Celeste"
+        "no super dash in the precise preset"
     );
 }

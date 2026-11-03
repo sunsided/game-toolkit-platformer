@@ -1,28 +1,19 @@
-[package]
-name = "animation"
-version = "0.1.0"
+[workspace]
+members = ["demo"]
+resolver = "3"
+
+[workspace.package]
 edition = "2024"
 rust-version = "1.95"
-description = "A small retro platformer built around a pluggable, configurable animation controller: jump queueing, hangtime, land-and-roll, double jump."
-keywords = ["game", "platformer", "animation", "retro", "pixel-art"]
-categories = ["games"]
 license = "EUPL-1.2"
 authors = ["Markus Mayer"]
-publish = false
 
-[dependencies]
-game-toolkit = "0.10"
-log = "0.4"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.11"
-
-[lints.rust]
+[workspace.lints.rust]
 unsafe_code = "deny"
 missing_docs = "warn"
 rust_2018_idioms = { level = "warn", priority = -1 }
 
-[lints.clippy]
+[workspace.lints.clippy]
 missing_docs_in_private_items = "warn"
 dbg_macro = "warn"
 todo = "warn"
@@ -30,7 +21,40 @@ manual_let_else = "warn"
 semicolon_if_nothing_returned = "warn"
 uninlined_format_args = "warn"
 
-# Our code lightly optimized, dependencies fully: playable debug builds that still compile fast.
+[package]
+name = "game-toolkit-platformer"
+version = "0.1.0"
+description = "A pluggable platforming controller for game-toolkit: fluid, snappy movement (jump buffer, coyote time, wall jumps, dashes, climbing, rolls, ...) with presets, and an animation state graph that follows it."
+keywords = ["gamedev", "platformer", "controller", "animation", "game-toolkit"]
+categories = ["game-development"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[features]
+default = ["toolkit"]
+## game-toolkit glue: the `Platformer` reads `Input` with control schemes per preset, and
+## a debug draw for a playable character before there is art. Without it, the movement and
+## the animation controller depend on nothing but std.
+toolkit = ["dep:game-toolkit"]
+
+[dependencies]
+game-toolkit = { version = "0.10", optional = true }
+
+[dev-dependencies]
+game-toolkit = "0.10"
+
+[[example]]
+name = "minimal"
+required-features = ["toolkit"]
+
+[lints]
+workspace = true
+
+# Light optimization for our own code, full for dependencies: playable debug builds that
+# still compile fast.
 [profile.dev]
 opt-level = 1
 

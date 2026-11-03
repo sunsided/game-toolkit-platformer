@@ -11,9 +11,9 @@
 //! On its own: an [`Intent`] in each fixed step, [`Event`]s out.
 //!
 //! ```
-//! use animation::sim::{Event, Intent, JumpKind, Level, Preset, World};
+//! use game_toolkit_platformer::sim::{Event, Intent, JumpKind, Level, Preset, World};
 //!
-//! let mut world = World::new(Level::demo(), Preset::Celeste.tuning());
+//! let mut world = World::new(Level::demo(), Preset::Precise.tuning());
 //! world.step(&Intent::default());
 //! world.step(&Intent { jump_pressed: true, jump_held: true, ..Intent::default() });
 //! assert!(world.events.iter().any(|e| matches!(e, Event::Jumped { kind: JumpKind::Ground, .. })));
