@@ -197,8 +197,8 @@ impl Animator {
     }
 
     /// Take what happened since the last call.
-    pub fn drain_events(&mut self) -> Vec<AnimEvent> {
-        std::mem::take(&mut self.events)
+    pub fn drain_events(&mut self) -> std::vec::Drain<'_, AnimEvent> {
+        self.events.drain(..)
     }
 }
 
@@ -262,7 +262,10 @@ mod tests {
         for _ in 0..12 {
             step(&mut a, 5.0);
         }
-        assert!(a.drain_events().contains(&AnimEvent::Marker("step".into())));
+        assert!(
+            a.drain_events()
+                .any(|e| e == AnimEvent::Marker("step".into()))
+        );
         assert_eq!(step(&mut a, 0.0), "idle");
     }
 
@@ -333,7 +336,8 @@ mod tests {
         assert!(!a.locked());
         assert!(!a.params.pending(jump), "pending triggers are gone");
         assert_eq!(a.history().count(), 0);
-        assert!(a.drain_events().contains(&AnimEvent::Entered(a.state())));
+        let entered = AnimEvent::Entered(a.state());
+        assert!(a.drain_events().any(|e| e == entered));
         // The speed went back to its default, so it stays idle.
         a.update(0.01);
         assert_eq!(a.state_name(), "idle");

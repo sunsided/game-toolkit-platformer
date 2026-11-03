@@ -33,11 +33,18 @@ in `World::abilities` (or `Builder::ability`), not by forking `sim/player`:
   facade), the tuning (read-only) and the terrain: `step.terrain.find_mut::<YourType>()`
   reaches your own terrain (through any wrappers whose `base` it is) to break a block or
   flip a switch, and the movement sees the change in the same step. They report
-  `Event::Custom(n)`.
+  `Event::Custom { id, data }` (`Event::custom(id).with([..])`: up to four numbers, a
+  knockback or a hit target). In `after`, `player.contacts` says what the body ran into
+  (a wall, a ceiling, the floor); in a `Party`, `step.others` holds the other bodies.
+- **Ids**: name modes and events with a `CustomId::new("my_crate::lunge")`, a hash of the
+  name worked out at compile time: abilities from different crates never have to agree
+  on numbers. Custom buttons belong to the game; an ability meant for others takes its
+  button's bit as a parameter.
 - **Ruling out built-in moves**: `before` may clear moves in `step.moves` for this step
   (`jump`, `dash`, `dive`, `climb`, `super_dash`, `glide`) and cap running (`max_run`): no
-  dash while attacking, no wall grab while carrying. Presses stay buffered.
-- **Modes**: `Mode::Custom { id, t }` (the `id` is a `u32`, like `Event::Custom`'s) takes the body over: no built-in move starts or runs
+  dash while attacking, no wall grab while carrying. Presses stay buffered. To replace a
+  built-in move, rule it out and do your own in its place.
+- **Modes**: `Mode::Custom { id, t }` (a `CustomId`, like `Event::Custom`'s) takes the body over: no built-in move starts or runs
   (no running, gravity, jumps, dashes, climbing), but it still moves by its speed, collides,
   lands and rides moving ground, and `t` counts up. Setting `Mode::Normal` hands it back.
   Outside a custom mode, an ability works alongside the built-in moves (a pogo in
@@ -45,6 +52,10 @@ in `World::abilities` (or `Builder::ability`), not by forking `sim/player`:
 - **Determinism**: abilities are part of the world, cloned with it (`Clone` is required),
   so a cloned world plays out identically as long as they keep their state inside and
   read nothing from outside.
+- **Animation**: an ability that also implements `Animate` drives its own animation
+  parameters from its own state (`Builder::animated`, `Platformer::add_animated`): one
+  registration for the move and its look. `World::ability::<T>()` reads any ability's
+  state, for a driver or the game.
 
 ## Abilities
 

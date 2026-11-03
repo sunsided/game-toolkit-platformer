@@ -322,7 +322,8 @@ impl Session {
                 dur: 0.25,
             });
         }
-        for e in self.animator.drain_events() {
+        let anim: Vec<AnimEvent> = self.animator.drain_events().collect();
+        for e in anim {
             match e {
                 AnimEvent::Entered(s) => {
                     let name = &self.animator.graph().state(s).name;

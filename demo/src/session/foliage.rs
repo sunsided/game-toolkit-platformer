@@ -72,8 +72,8 @@ impl Foliage {
     /// air, grass on some exposed rock tops.
     pub fn grow(level: &Level) -> Self {
         let mut sprigs = Vec::new();
-        for ty in 0..level.h {
-            for tx in 0..level.w {
+        for ty in 0..level.height() {
+            for tx in 0..level.width() {
                 let tile = level.tile(tx, ty);
                 if tile == Tile::Empty {
                     continue;
@@ -82,7 +82,7 @@ impl Foliage {
                 let open_below = level.tile(tx, ty + 1) == Tile::Empty;
                 let open_above = level.tile(tx, ty - 1) == Tile::Empty;
                 // Moss under undersides, not too low to the floor.
-                if open_below && ty + 3 < level.h && hash(tx, ty) % 5 < 3 {
+                if open_below && ty + 3 < level.height() && hash(tx, ty) % 5 < 3 {
                     let bottom = if tile == Tile::Platform {
                         y0 + 3.0
                     } else {

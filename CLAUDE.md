@@ -5,7 +5,7 @@
 presets tuned toward the feel of Celeste, Hollow Knight, Silksong and Super Meat Boy, plus an animation state
 graph that follows it). The library is the product; `demo/` is its test bench. Keep using it
 plug and play for game-toolkit users: `Platformer::on(&level, preset)`, `update(&input, &mut level, dt)`,
-draw `sprite()` at `position()`. Design docs live in `docs/` (`hazards.md` and `moving-platforms.md` are doc-tested recipes); keep them in sync when behavior
+draw `sprite()` at `position()`. Design docs live in `docs/` (`hazards.md`, `moving-platforms.md` and `surfaces.md` are doc-tested recipes); keep them in sync when behavior
 changes (`docs/roadmap.md` tracks what's next). Keep the README short; details go in `docs/`.
 
 ## Layout
@@ -22,14 +22,21 @@ default):
   number and ability switch lives in `sim/tuning.rs` (`Tuning`, `Preset`). Movement emits
   `Event`s; nothing in `sim` knows about animation. `sim/level.rs` holds the demo level
   (keep its stairs within a plain held jump; a test checks) and `Tile::Custom` tiles.
-  `sim/terrain.rs`: the `Terrain` trait the world steps through (only `solid` required;
-  closures count; every other method defaults to forwarding to `base()`, so wrappers write
-  only what changes; `find_mut::<T>()` reaches a concrete terrain through wrappers; `carry`
-  for moving ground, which `Level` doesn't have). `Level` is tiles, platforms, crystals,
+  `sim/terrain.rs`: the `Terrain` trait the world steps through (`solid` and `base` required,
+  `terrain_layer!()` writes `base` for a leaf; closures count; every other method defaults to forwarding to `base()`, so wrappers write
+  only what changes, with `terrain_layer!(field)` for `base`/`base_mut`/`as_any_mut`;
+  per-layer state moves in `tick`, which `update` runs down the chain by itself;
+  `find_mut::<T>()` reaches a concrete terrain through wrappers; `surface` (`Surface`:
+  friction, climbable, belt, bounce); `carry` for moving ground, which `Level` doesn't
+  have). Placement is a `Spot` (`TopLeft` or `Feet`) everywhere; `Level::start()` turns
+  the spawn tile into one. `Level` (fields private, behind methods) is tiles, platforms, crystals,
   spawn; no boxes (they are the demo's). `sim/ability.rs`: the `Ability` hooks for a
-  game's own moves (`Mode::Custom`, `Event::Custom`, both `u32` ids; `Step::terrain` is
-  mutable; `Step::moves` (`sim/moves.rs`) rules out built-in moves per step).
-  `World::step` is `act`, `Terrain::update`, `settle`.
+  game's own moves (`Mode::Custom`, `Event::Custom { id, data }`, ids are `CustomId`
+  name hashes; `Step::terrain` is mutable; `Step::moves` (`sim/moves.rs`) rules out
+  built-in moves per step; `Step::others` for party members; `Player::contacts`).
+  `World::step` is `act`, `Terrain::update`, `settle`. `Level` has custom tile kinds
+  (`Level::define`, `CustomTile` with a `Hold`: air, solid, one-way platform; ids are
+  game-local `u8`s on purpose) and a `tile_size`.
 - `anim/`: the animation controller, independent of any game. `Params` (bools, floats,
   triggers with TTL), `Clip`, `Cond`, `GraphSpec` (by name, `Cow<'static, str>`) compiled
   into a validated `Graph`, `Animator`, `Driver`. Keep it free of `sim`/`hero` imports.
@@ -37,9 +44,13 @@ default):
   and events to params; `try_new` reports a custom graph's missing parameter).
 - `platformer.rs`: the `Platformer` facade and its `Builder` (preset, `tune`, tuning,
   controls, graph or partial graph, drivers, abilities, spawn, `scale`): fixed-step clock,
-  press latching, event queues, interpolated position; `launch`, `teleport`, `respawn`
-  (also after falling out); accessors (`grounded`, `velocity`, `mode`, ...) so games
-  needn't read `world.player`. `platformer/scaled.rs` converts a pixel terrain to units.
+  press latching, event queues, interpolated position, `hitboxes()` per step of the
+  frame; `launch`, `teleport`, `respawn` (also after falling out); runtime `tune`,
+  `add_ability`, `remove_ability`, `set_graph`; accessors (`grounded`, `velocity`, `mode`,
+  `ability::<T>()`, `contacts`, `tuning`, ...) so games needn't reach the world, which is
+  private behind `world()`/`world_mut()` (same for `animator`); `Animate` hooks find their
+  ability by type. `platformer/animate.rs`: `Animate`, an ability driving its
+  own animation parameters. `platformer/scaled.rs` converts a pixel terrain to units.
 - `party.rs`: `Party`, several `Platformer`s on one terrain and one clock (the terrain
   updates once per step; members block, stand on and ride each other).
 - `controls.rs` (feature `toolkit`): game-toolkit input to an `Intent` through a `Scheme`

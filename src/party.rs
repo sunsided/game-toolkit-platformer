@@ -7,14 +7,15 @@
 //!
 //! With [`Party::solid`] on (the default), the members block each other and stand on each
 //! other's heads, and a character standing on another rides along when it moves. The
-//! terrain's update gets every body, so what falls or moves can stop at any of them.
+//! terrain's update gets every body, so what falls or moves can stop at any of them, and
+//! abilities see the other members' bodies in [`Step::others`](crate::sim::Step::others).
 //!
 //! ```
 //! use game_toolkit_platformer::prelude::*;
 //!
 //! let mut level = Level::demo();
 //! let a = Platformer::on(&level, Preset::Hybrid);
-//! let b = Platformer::builder().spawn_on(&level).build().unwrap();
+//! let b = Platformer::builder().spawn(level.start()).build().unwrap();
 //! let mut party = Party::new(vec![a, b]);
 //! // One intent per member, in order (from your own input: one pad each, say).
 //! let intents = [Intent { move_x: 1.0, ..Intent::default() }, Intent::default()];
@@ -54,6 +55,7 @@ impl Party {
     pub fn advance(&mut self, intents: &[Intent], terrain: &mut dyn Terrain, dt: f32) -> u32 {
         let intent = |k: usize| intents.get(k).copied().unwrap_or_default();
         for (k, m) in self.members.iter_mut().enumerate() {
+            m.begin_frame();
             m.hold_presses(&intent(k));
         }
         let n = steps(&mut self.acc, dt);
@@ -61,7 +63,7 @@ impl Party {
             let step: Vec<Intent> = (self.members.iter_mut().enumerate())
                 .map(|(k, m)| m.with_presses(intent(k)))
                 .collect();
-            self.step(&step, terrain);
+            self.step_once(&step, terrain);
         }
         for m in &mut self.members {
             m.set_clock(self.acc);
@@ -72,6 +74,14 @@ impl Party {
     /// Exactly one fixed step of [`DT`] for everyone (for your own clock, replays, tests).
     /// The members share the first one's [`Platformer::scale`].
     pub fn step(&mut self, intents: &[Intent], terrain: &mut dyn Terrain) {
+        for m in &mut self.members {
+            m.begin_frame();
+        }
+        self.step_once(intents, terrain);
+    }
+
+    /// One fixed step for everyone, within a frame.
+    fn step_once(&mut self, intents: &[Intent], terrain: &mut dyn Terrain) {
         let k = self.members.first().map_or(1, Platformer::scale);
         debug_assert!(
             self.members.iter().all(|m| m.scale() == k),
@@ -118,8 +128,11 @@ impl Party {
                 others: others(i, &now),
             };
             let intent = intents.get(i).copied().unwrap_or_default();
+            let everyone_else: Vec<Rect> = (0..n).filter(|&j| j != i).map(|j| now[j]).collect();
             self.members[i].begin_step();
-            self.members[i].world.act(&mut among, &intent);
+            self.members[i]
+                .world
+                .act_among(&mut among, &intent, &everyone_else);
             now[i] = self.members[i].world.player.rect();
         }
         terrain.update(DT, &now);
@@ -174,7 +187,7 @@ impl Terrain for Among<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::{Event, Level, Preset};
+    use crate::sim::{Event, Level, Preset, Spot};
 
     /// A flat floor at y = 100 that counts its updates and the bodies it saw.
     #[derive(Default)]
@@ -189,15 +202,16 @@ mod tests {
         fn solid(&self, r: Rect) -> bool {
             r.bottom() > 100
         }
-        fn update(&mut self, _dt: f32, bodies: &[Rect]) {
+        fn tick(&mut self, _dt: f32, bodies: &[Rect]) {
             self.updates += 1;
             self.bodies = bodies.len();
         }
+        crate::terrain_layer!();
     }
 
     /// A character with its hitbox's top-left at `x, y`.
     fn at(x: i32, y: i32) -> Platformer {
-        Platformer::at(x, y, Preset::Hybrid)
+        Platformer::at(Spot::TopLeft(x, y), Preset::Hybrid)
     }
 
     /// `n` frames of 1/60 s with `intents`.
@@ -296,11 +310,11 @@ mod tests {
         let mut level = Level::parse(&["........", "........", "........", "########"]);
         let a = Platformer::builder()
             .ability(Dig)
-            .spawn_standing(12, 24)
+            .spawn(Spot::Feet(12, 24))
             .build()
             .unwrap();
         let b = Platformer::builder()
-            .spawn_standing(44, 24)
+            .spawn(Spot::Feet(44, 24))
             .build()
             .unwrap();
         let mut p = Party::new(vec![a, b]);
@@ -311,5 +325,47 @@ mod tests {
         p.step(&[dig], &mut level);
         assert_eq!(level.tile(1, 3), Tile::Empty, "dug out");
         assert_eq!(level.tile(5, 3), Tile::Solid);
+    }
+
+    #[test]
+    fn abilities_see_the_other_members() {
+        use crate::sim::{Ability, CustomId, Step};
+        /// Reports how many others it saw and how far the nearest is.
+        #[derive(Clone, Debug)]
+        struct Look;
+        /// Look's event.
+        const SAW: CustomId = CustomId::new("tests::saw");
+        impl Ability for Look {
+            fn after(&mut self, s: &mut Step<'_>) {
+                let me = s.player.rect();
+                let near = s.others.iter().map(|o| (o.x - me.x).abs()).min();
+                let n = s.others.len() as f32;
+                let d = near.map_or(-1.0, |d| d as f32);
+                s.events.push(Event::custom(SAW).with([n, d, 0.0, 0.0]));
+            }
+        }
+        let a = Platformer::builder()
+            .ability(Look)
+            .spawn(Spot::TopLeft(20, 88))
+            .build()
+            .unwrap();
+        let mut p = Party::new(vec![a, at(60, 88), at(100, 88)]);
+        let mut floor = Floor::default();
+        p.step(&[], &mut floor);
+        let saw: Vec<_> = p.members[0]
+            .drain_events()
+            .filter_map(|e| e.custom_data(SAW))
+            .collect();
+        assert_eq!(saw, [[2.0, 40.0, 0.0, 0.0]]);
+        assert_eq!(p.members[0].hitboxes().len(), 1);
+
+        // Alone, nobody.
+        let mut solo = Platformer::builder().ability(Look).build().unwrap();
+        solo.step(&Intent::default(), &mut floor);
+        let saw: Vec<_> = solo
+            .drain_events()
+            .filter_map(|e| e.custom_data(SAW))
+            .collect();
+        assert_eq!(saw, [[0.0, -1.0, 0.0, 0.0]]);
     }
 }

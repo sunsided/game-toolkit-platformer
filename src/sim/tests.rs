@@ -507,9 +507,9 @@ fn crystals_recharge_in_the_air_and_come_back() {
     );
     let ev = run(&mut w, Intent::default(), 30);
     assert!(ev.contains(&Event::Recharged { crystal: true }), "{ev:?}");
-    assert!(!w.level.crystals[0].ready());
+    assert!(!w.level.refills()[0].ready());
     run(&mut w, Intent::default(), 400);
-    assert!(w.level.crystals[0].ready());
+    assert!(w.level.refills()[0].ready());
 }
 
 #[test]
@@ -1401,11 +1401,13 @@ impl Terrain for Elevator {
             (0.0, 0.0)
         }
     }
+
+    crate::terrain_layer!();
 }
 
 /// A character standing on `e`'s platform, 10 units in from its left edge.
 fn on_elevator(e: &Elevator, tuning: Tuning) -> World {
-    World::new(tuning, (e.plat.x + 10, e.plat.y - player::H))
+    World::new(tuning, Spot::TopLeft(e.plat.x + 10, e.plat.y - player::H))
 }
 
 #[test]
@@ -1446,12 +1448,8 @@ fn moving_ground_stops_at_walls_and_ceilings() {
         fn solid(&self, r: Rect) -> bool {
             self.0.solid(r) || (r.y < 60 && r.x < 100)
         }
-        fn update(&mut self, dt: f32, bodies: &[Rect]) {
-            self.0.update(dt, bodies);
-        }
-        fn carry(&self, r: Rect) -> (f32, f32) {
-            self.0.carry(r)
-        }
+        // The elevator's update and carry, through a tuple field.
+        crate::terrain_layer!(0);
     }
     let mut lid = Lid(Elevator::new(80, 120, (0.0, -40.0)));
     let mut w = on_elevator(&lid.0, Tuning::default());
@@ -1474,12 +1472,7 @@ fn moving_ground_stops_at_walls_and_ceilings() {
         fn solid(&self, r: Rect) -> bool {
             self.0.solid(r) || r.right() > 120
         }
-        fn update(&mut self, dt: f32, bodies: &[Rect]) {
-            self.0.update(dt, bodies);
-        }
-        fn carry(&self, r: Rect) -> (f32, f32) {
-            self.0.carry(r)
-        }
+        crate::terrain_layer!(0);
     }
     let mut wall = Wall(Elevator::new(60, 120, (30.0, 0.0)));
     let mut w = on_elevator(&wall.0, Tuning::default());
@@ -1539,7 +1532,7 @@ fn a_moving_wall_carries_the_character_holding_it() {
             h: 120,
         };
         e.prev = e.plat;
-        let mut w = World::new(Tuning::default(), (94, 100));
+        let mut w = World::new(Tuning::default(), Spot::TopLeft(94, 100));
         let hold = Intent {
             move_x: 1.0,
             grab: true,
@@ -1559,6 +1552,12 @@ fn a_moving_wall_carries_the_character_holding_it() {
     );
 }
 
+/// The lunge's mode and event.
+const LUNGE: CustomId = CustomId::new("tests::lunge");
+
+/// The dig's event.
+const DIG: CustomId = CustomId::new("tests::dig");
+
 /// Custom button 0 lunges forward on the ground for 0.15 s; counts its lunges.
 #[derive(Clone, Debug, Default)]
 struct Lunge {
@@ -1572,18 +1571,19 @@ impl Ability for Lunge {
         match p.mode {
             Mode::Normal if s.intent.pressed(0) && p.grounded => {
                 self.count += 1;
-                p.mode = Mode::Custom { id: 1, t: 0.0 };
+                p.mode = Mode::Custom { id: LUNGE, t: 0.0 };
                 p.vx = 240.0 * p.facing as f32;
-                s.events.push(Event::Custom(self.count));
+                s.events
+                    .push(Event::custom(LUNGE).with([self.count as f32, 0.0, 0.0, 0.0]));
             }
-            Mode::Custom { id: 1, t } if t >= 0.15 => p.mode = Mode::Normal,
+            Mode::Custom { id: LUNGE, t } if t >= 0.15 => p.mode = Mode::Normal,
             _ => {}
         }
     }
 
     fn after(&mut self, s: &mut Step<'_>) {
         // Against a wall, the lunge ends at once.
-        if matches!(s.player.mode, Mode::Custom { id: 1, .. }) && s.player.vx == 0.0 {
+        if matches!(s.player.mode, Mode::Custom { id: LUNGE, .. }) && s.player.vx == 0.0 {
             s.player.mode = Mode::Normal;
         }
     }
@@ -1602,7 +1602,12 @@ fn an_ability_takes_the_body_over_and_hands_it_back() {
         ..Intent::default()
     };
     w.step(&press);
-    assert!(w.events.contains(&Event::Custom(1)));
+    assert!(
+        w.events
+            .iter()
+            .any(|e| e.custom_data(LUNGE) == Some([1.0, 0.0, 0.0, 0.0])),
+        "the first lunge, with its count"
+    );
     assert!(
         !w.events.iter().any(|e| matches!(e, Event::Jumped { .. })),
         "no built-in move during a custom mode: {:?}",
@@ -1610,7 +1615,7 @@ fn an_ability_takes_the_body_over_and_hands_it_back() {
     );
     let events = run(&mut w, Intent::default(), 17);
     assert!(
-        matches!(w.player.mode, Mode::Custom { id: 1, .. }),
+        matches!(w.player.mode, Mode::Custom { id: LUNGE, .. }),
         "still lunging"
     );
     assert!(
@@ -1654,7 +1659,10 @@ fn a_cloned_world_with_abilities_plays_out_identically() {
     }
     assert_eq!(a.player, b.player);
     assert_eq!(ea, eb);
-    assert!(ea.iter().any(|e| matches!(e, Event::Custom(_))));
+    assert!(
+        ea.iter()
+            .any(|e| matches!(e, Event::Custom { id: LUNGE, .. }))
+    );
 }
 
 /// While custom button 0 is held: no dashes, no wall grabs, walking at 20 units/s at most.
@@ -1759,7 +1767,8 @@ impl Ability for Dig {
             );
             level.set(tx, ty, Tile::Empty);
             self.dug += 1;
-            s.events.push(Event::Custom(self.dug));
+            s.events
+                .push(Event::custom(DIG).with([self.dug as f32, 0.0, 0.0, 0.0]));
         }
     }
 }
@@ -1776,7 +1785,7 @@ fn an_ability_edits_the_terrain_within_the_step() {
         custom_pressed: 1,
         ..Intent::default()
     });
-    assert!(w.events.contains(&Event::Custom(1)));
+    assert!(w.events.iter().any(|e| e.custom_data(DIG).is_some()));
     assert_eq!(w.level.tile(5, 15), Tile::Empty);
     assert!(!w.player.grounded, "fell into the hole in the same step");
     assert!(w.events.contains(&Event::LeftGround), "{:?}", w.events);
@@ -1868,4 +1877,354 @@ fn a_wrapper_plays_out_like_its_base() {
     }
     assert_eq!(a.player, b.player);
     assert!(a.player.y <= e.plat.y - player::H - 10, "carried up");
+}
+
+/// The room with custom tile 0 defined as `tile` at the given `(tile row, tile column)`s.
+fn custom_room(cells: &[(i32, i32)], tile: CustomTile) -> Sim {
+    let mut level = room(&[]);
+    level.define(0, tile);
+    for &(ty, tx) in cells {
+        level.set(tx, ty, Tile::Custom(0));
+    }
+    world(level)
+}
+
+/// A surface like the default but for `f`.
+fn surface(f: impl FnOnce(&mut Surface)) -> CustomTile {
+    let mut s = Surface::DEFAULT;
+    f(&mut s);
+    CustomTile::solid(s)
+}
+
+/// How far the character slides after running right for `run_steps`, then letting go.
+fn slide(w: &mut Sim, run_steps: usize) -> i32 {
+    let go = Intent {
+        move_x: 1.0,
+        ..Intent::default()
+    };
+    run(w, go, run_steps);
+    let x0 = w.player.x;
+    run(w, Intent::default(), 120);
+    assert!(w.player.vx.abs() < 1.0, "came to rest: {}", w.player.vx);
+    w.player.x - x0
+}
+
+#[test]
+fn ice_lets_the_run_slide_on() {
+    let floor: Vec<(i32, i32)> = (1..23).map(|x| (15, x)).collect();
+    let mut plain = custom_room(&floor, CustomTile::solid(Surface::DEFAULT));
+    let mut ice = custom_room(&floor, surface(|s| s.friction = 0.15));
+    assert!(ice.level.solid_tile(5, 15), "custom tiles can be solid");
+    let (p, i) = (slide(&mut plain, 30), slide(&mut ice, 90));
+    assert!(i > p + 10, "ice slides further: {i} vs {p}");
+}
+
+#[test]
+fn a_conveyor_carries_what_stands_on_it_and_a_jump_keeps_it() {
+    let floor: Vec<(i32, i32)> = (1..23).map(|x| (15, x)).collect();
+    let mut w = custom_room(&floor, surface(|s| s.belt = 30.0));
+    run(&mut w, Intent::default(), 10);
+    let x0 = w.player.x;
+    run(&mut w, Intent::default(), 120);
+    let carried = w.player.x - x0;
+    assert!(
+        (28..=32).contains(&carried),
+        "a second at 30 units/s: {carried}"
+    );
+    assert!(w.player.grounded);
+    assert!((w.player.lift.0 - 30.0).abs() < 1.0, "{:?}", w.player.lift);
+    // Off the belt in a jump, it takes the belt's speed along.
+    let ev = jump(&mut w, 0, 0);
+    assert!(jumps(&ev).iter().any(|(k, _)| *k == JumpKind::Ground));
+    assert!(w.player.vx > 20.0, "kept the belt's speed: {}", w.player.vx);
+}
+
+#[test]
+fn a_wall_that_is_not_climbable_cannot_be_grabbed_but_slid() {
+    let wall: Vec<(i32, i32)> = (1..15).map(|y| (y, 10)).collect();
+    let mut w = custom_room(&wall, surface(|s| s.climbable = false));
+    w.player.x = 10 * TILE - player::W;
+    w.player.y = 4 * TILE;
+    w.player.grounded = false;
+    let grab = Intent {
+        move_x: 1.0,
+        grab: true,
+        ..Intent::default()
+    };
+    let ev = run(&mut w, grab, 30);
+    assert!(!ev.contains(&Event::Grabbed), "{ev:?}");
+    assert_ne!(w.player.mode, Mode::Climb);
+    assert_eq!(w.player.wall_slide, 1, "slides down it");
+
+    // The same wall, climbable: grabbed at once.
+    let mut w = custom_room(&wall, CustomTile::solid(Surface::DEFAULT));
+    w.player.x = 10 * TILE - player::W;
+    w.player.y = 4 * TILE;
+    w.player.grounded = false;
+    assert!(run(&mut w, grab, 2).contains(&Event::Grabbed));
+}
+
+#[test]
+fn bouncy_ground_bounces_a_landing_back_up() {
+    let floor: Vec<(i32, i32)> = (1..23).map(|x| (15, x)).collect();
+    let mut w = custom_room(&floor, surface(|s| s.bounce = 0.8));
+    w.player.y = 4 * TILE;
+    w.player.grounded = false;
+    let mut bounced = None;
+    for _ in 0..120 {
+        w.step(&Intent::default());
+        if let Some(impact) = w.events.iter().find_map(|e| match e {
+            Event::Landed { impact, .. } => Some(*impact),
+            _ => None,
+        }) {
+            bounced = Some((impact, w.player.vy, w.player.grounded));
+            break;
+        }
+    }
+    let (impact, vy, grounded) = bounced.expect("landed");
+    assert!((vy + impact * 0.8).abs() < 1.0, "{vy} after {impact}");
+    assert!(!grounded, "in the air again");
+    run(&mut w, Intent::default(), 10);
+    assert!(w.player.y < 15 * TILE - player::H - 4, "on the way up");
+}
+
+#[test]
+fn a_custom_bouncy_platform_bounces_from_above_and_lets_through_from_below() {
+    let bouncy = Surface {
+        bounce: 0.8,
+        ..Surface::DEFAULT
+    };
+    // A ledge two tiles over the room's floor.
+    let ledge: Vec<(i32, i32)> = (1..23).map(|x| (13, x)).collect();
+    let mut w = custom_room(&ledge, CustomTile::platform(bouncy));
+    w.player.y = 4 * TILE;
+    w.player.grounded = false;
+    let mut bounced = None;
+    for _ in 0..120 {
+        w.step(&Intent::default());
+        if let Some(impact) = w.events.iter().find_map(|e| match e {
+            Event::Landed { impact, .. } => Some(*impact),
+            _ => None,
+        }) {
+            bounced = Some((impact, w.player.vy, w.player.rect().bottom()));
+            break;
+        }
+    }
+    let (impact, vy, feet) = bounced.expect("landed on the platform");
+    assert_eq!(feet, 13 * TILE, "on top of the ledge");
+    assert!((vy + impact * 0.8).abs() < 1.0, "{vy} after {impact}");
+
+    // From below, a jump passes up through it.
+    let mut w = custom_room(&ledge, CustomTile::platform(bouncy));
+    w.player.y = 15 * TILE - player::H;
+    run(&mut w, Intent::default(), 10);
+    assert!(w.player.grounded, "on the room's floor");
+    let jump = Intent {
+        jump_pressed: true,
+        jump_held: true,
+        ..Intent::default()
+    };
+    run(&mut w, jump, 1);
+    let held = Intent {
+        jump_held: true,
+        ..Intent::default()
+    };
+    let mut top = w.player.y;
+    for _ in 0..60 {
+        run(&mut w, held, 1);
+        top = top.min(w.player.y);
+    }
+    assert!(top + player::H < 13 * TILE, "rose through the ledge: {top}");
+}
+
+#[test]
+fn contacts_say_what_the_body_ran_into() {
+    let mut w = world(room(&[(11, 1, "######")]));
+    let right = Intent {
+        move_x: 1.0,
+        ..Intent::default()
+    };
+    // Running into the room's right wall.
+    w.player.x = 20 * TILE;
+    run(&mut w, right, 40);
+    assert_eq!(w.player.contacts.wall, 1);
+    run(&mut w, Intent::default(), 10);
+    assert_eq!(w.player.contacts, Contacts::default());
+    // A jump into the low ceiling at the left.
+    w.player.x = 2 * TILE;
+    run(&mut w, Intent::default(), 30);
+    let mut ceiling = false;
+    let press = Intent {
+        jump_pressed: true,
+        jump_held: true,
+        ..Intent::default()
+    };
+    w.step(&press);
+    for _ in 0..30 {
+        w.step(&Intent {
+            jump_held: true,
+            ..Intent::default()
+        });
+        ceiling |= w.player.contacts.ceiling;
+    }
+    assert!(ceiling, "bonked");
+    let mut floor = false;
+    for _ in 0..60 {
+        w.step(&Intent::default());
+        floor |= w.player.contacts.floor;
+    }
+    assert!(floor, "landed");
+}
+
+#[test]
+fn a_level_can_have_bigger_tiles() {
+    let level = Level::parse(&["....", ".P*.", "####"]).with_tile_size(16);
+    assert!(level.solid(Rect {
+        x: 0,
+        y: 32,
+        w: 4,
+        h: 4
+    }));
+    assert!(!level.solid(Rect {
+        x: 0,
+        y: 28,
+        w: 4,
+        h: 4
+    }));
+    assert_eq!(level.start(), Spot::Feet(24, 32));
+    assert_eq!(
+        level.refills()[0].area,
+        Rect {
+            x: 32,
+            y: 16,
+            w: 16,
+            h: 16
+        }
+    );
+    assert_eq!(level.floor_y(), 48);
+    let mut w = Sim::new(level, Tuning::default());
+    run(&mut w, Intent::default(), 10);
+    assert!(w.player.grounded);
+    assert_eq!(w.player.rect().bottom(), 32);
+}
+
+/// A knockback ability from one crate: on custom button 1, a hop back, with its speed.
+#[derive(Clone, Debug)]
+struct Recoil;
+
+/// Recoil's event, named after its crate.
+const RECOIL: CustomId = CustomId::new("recoil_crate::recoil");
+
+impl Ability for Recoil {
+    fn before(&mut self, s: &mut Step<'_>) {
+        if s.intent.pressed(1) {
+            let vx = -60.0 * s.player.facing as f32;
+            s.player.launch(vx, -100.0);
+            s.events
+                .push(Event::custom(RECOIL).with([vx, -100.0, 0.0, 0.0]));
+        }
+    }
+}
+
+#[test]
+fn abilities_from_different_crates_need_no_shared_ids_and_carry_data() {
+    let mut w = world(room(&[]));
+    w.abilities.push(Box::new(Lunge::default()));
+    w.abilities.push(Box::new(Recoil));
+    assert_ne!(LUNGE, RECOIL);
+    run(&mut w, Intent::default(), 5);
+    w.step(&Intent {
+        custom_pressed: 0b11,
+        ..Intent::default()
+    });
+    let data: Vec<_> = w
+        .events
+        .iter()
+        .filter_map(|e| e.custom_data(RECOIL))
+        .collect();
+    assert_eq!(data, [[-60.0, -100.0, 0.0, 0.0]]);
+    assert!(w.events.iter().any(|e| e.custom_data(LUNGE).is_some()));
+    assert_eq!(
+        Event::Apex.with([1.0; 4]),
+        Event::Apex,
+        "only custom events take data"
+    );
+    assert_eq!(
+        w.ability::<Lunge>().map(|l| l.count),
+        Some(1),
+        "typed access"
+    );
+    w.ability_mut::<Lunge>().unwrap().count = 7;
+    assert_eq!(w.ability::<Lunge>().unwrap().count, 7);
+    assert!(w.ability::<Laden>().is_none());
+}
+
+/// A layer over a level that counts its own ticks and never chains to the level's.
+struct Counting {
+    /// The level beneath.
+    level: Level,
+    /// Ticks so far.
+    ticks: u32,
+}
+
+impl Terrain for Counting {
+    fn solid(&self, r: Rect) -> bool {
+        self.level.solid(r)
+    }
+    fn tick(&mut self, _dt: f32, _bodies: &[Rect]) {
+        self.ticks += 1;
+    }
+    crate::terrain_layer!(level);
+}
+
+#[test]
+fn a_layer_that_ticks_without_chaining_keeps_the_base_refills_coming_back() {
+    let mut t = Counting {
+        level: room(&[(10, 2, "*")]),
+        ticks: 0,
+    };
+    let mut w = World::on(&t.level, Tuning::default());
+    t.level.set_refill_back(1.0);
+    let area = t.level.refills()[0].area;
+    assert!(t.level.refill(area), "used up");
+    for _ in 0..130 {
+        w.step(&mut t, &Intent::default());
+    }
+    assert_eq!(t.ticks, 130, "its own tick ran");
+    assert!(t.level.refills()[0].ready(), "and the level's");
+    let found: &mut dyn Terrain = &mut t;
+    assert!(found.find_mut::<Counting>().is_some(), "found by find_mut");
+    assert!(found.find_mut::<Level>().is_some());
+}
+
+/// A layer whose base and base_mut disagree: a mistake.
+struct Crossed {
+    /// One level.
+    a: Level,
+    /// Another.
+    b: Level,
+}
+
+impl Terrain for Crossed {
+    fn solid(&self, r: Rect) -> bool {
+        self.a.solid(r)
+    }
+    fn base(&self) -> Option<&dyn Terrain> {
+        Some(&self.a)
+    }
+    fn base_mut(&mut self) -> Option<&mut dyn Terrain> {
+        Some(&mut self.b)
+    }
+}
+
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "must return the same terrain")]
+fn a_layer_whose_bases_disagree_is_caught_in_debug_builds() {
+    let mut t = Crossed {
+        a: Level::demo(),
+        b: Level::demo(),
+    };
+    let mut w = World::on(&t.a, Tuning::default());
+    w.step(&mut t, &Intent::default());
 }

@@ -41,7 +41,7 @@ pub fn scene(r: &mut dyn Raster, s: &Session, stars: &[Twinkle], clock: f32) {
     if s.skin == Skin::Mouse {
         twinkle(r, stars, clock);
     }
-    for c in &s.stage.level.crystals {
+    for c in s.stage.level.refills() {
         let a = px(c.area);
         let (cx, cy) = (a.x + TILE * K / 2, a.y + TILE * K / 2);
         let bob = ((clock * 3.0).sin() * 2.0).round() as i32;

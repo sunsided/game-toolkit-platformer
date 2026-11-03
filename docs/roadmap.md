@@ -36,6 +36,16 @@
   change the terrain and rule out single built-in moves, boxes moved into the demo as an
   ability, a lift in the demo and a moving-platforms recipe, `Builder::scale` for bigger
   tiles, facade accessors, `Platformer::standing`
+- [x] API review: terrain layers with a per-layer `tick` and `terrain_layer!`, per-step
+  hitboxes for hazards, typed placement (`Spot`), surfaces (ice, conveyors, non-climbable
+  walls, bouncy ground; solid custom tiles), `CustomId`s and event data, runtime `tune`,
+  `add_ability` and `set_graph`, `Animate` for abilities with their own animation,
+  contacts and other bodies for abilities, a configurable `Level` tile size, drains
+  without allocation
+- [x] Extension review: `Terrain::base` required (a wrapper can't lose its base),
+  animation hooks found by type, `remove_ability`, `ability`/`contacts`/`tuning`
+  accessors and a private `world` (`world()`/`world_mut()`), `Level` behind methods
+  (`add_refill` at its tile size, `set_spawn_tile`, `find`), custom one-way platforms
 
 ## Next
 

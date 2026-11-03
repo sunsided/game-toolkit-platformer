@@ -1,6 +1,6 @@
 //! [`Scaled`]: a terrain in your pixels, seen in the controller's units.
 
-use crate::sim::{Rect, Terrain};
+use crate::sim::{Rect, Surface, Terrain};
 
 /// A terrain that answers in pixels, `k` of them per unit, asked in units: what a
 /// [`crate::Platformer`] with a [`crate::Builder::scale`] steps through.
@@ -28,6 +28,15 @@ impl Terrain for Scaled<'_> {
         self.inner.fell_out(r.scaled(self.k))
     }
 
+    fn surface(&self, r: Rect) -> Surface {
+        let s = self.inner.surface(r.scaled(self.k));
+        Surface {
+            belt: s.belt / self.k as f32,
+            ..s
+        }
+    }
+
+    // An adapter: the terrain behind gets the bodies in its pixels, and runs its own chain.
     fn update(&mut self, dt: f32, bodies: &[Rect]) {
         let bodies: Vec<Rect> = bodies.iter().map(|b| b.scaled(self.k)).collect();
         self.inner.update(dt, &bodies);

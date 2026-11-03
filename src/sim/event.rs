@@ -1,5 +1,7 @@
 //! [`Event`]: what happened in a step, for animation, sound and effects.
 
+use super::CustomId;
+
 /// How a jump left the ground (or the wall, or the air).
 /// New kinds may come with new moves, so matches need a `_` arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -109,13 +111,42 @@ pub enum Event {
     },
     /// The character fell out of the world (the terrain said so).
     FellOut,
-    /// Something of your own happened (an [`Ability`](super::Ability) reported it), by a
-    /// number of your choosing.
-    Custom(u32),
+    /// Something of your own happened (an [`Ability`](super::Ability) reported it). Make
+    /// one with [`Event::custom`] and add numbers with [`Event::with`].
+    Custom {
+        /// Which of your events (see [`CustomId`]).
+        id: CustomId,
+        /// Up to four numbers of your own: a knockback's speed, a hit target's index, a
+        /// charge level. Zero when unused.
+        data: [f32; 4],
+    },
     /// Something solid moved into the character (moving ground carried it into a
     /// ceiling, a moving solid hit it): it's stuck inside. Reported every step it stays
     /// so; usually a respawn.
     Squished,
     /// It was put back at its spawn point (after falling out, unless respawning is off).
     Respawned,
+}
+
+impl Event {
+    /// A custom event `id` without data.
+    pub const fn custom(id: CustomId) -> Self {
+        Event::Custom { id, data: [0.0; 4] }
+    }
+
+    /// This event with `data` (only for [`Event::Custom`]; other events stay as they are).
+    pub const fn with(self, data: [f32; 4]) -> Self {
+        match self {
+            Event::Custom { id, .. } => Event::Custom { id, data },
+            other => other,
+        }
+    }
+
+    /// The data of custom event `id`, if this is one.
+    pub fn custom_data(&self, id: CustomId) -> Option<[f32; 4]> {
+        match *self {
+            Event::Custom { id: i, data } if i == id => Some(data),
+            _ => None,
+        }
+    }
 }

@@ -7,11 +7,12 @@ the lift boost on jumping off, `Event::Squished`):
 | Method | Answers |
 |---|---|
 | `solid(r)` | the platform's box counts, where it is now |
-| `update(dt, bodies)` | move it, once per step, after the characters moved; don't move into a body from below or the side (it doesn't push characters), but do move into one standing on top, which gets carried |
+| `tick(dt, bodies)` | move it, once per step, after the characters moved; don't move into a body from below or the side (it doesn't push characters), but do move into one standing on top, which gets carried |
 | `carry(r)` | how far it moved in that update, when `r` overlapped it before: `r` is the row under the feet, or the column beside a hand on its side |
 
-Build it on a `Level` (or any terrain) by naming that as the `base`: platforms, refills
-and falling out stay the level's, and the update has to call the base's too.
+Build it on a `Level` (or any terrain) by naming that as the `base` with
+`terrain_layer!`: platforms, refills, surfaces and falling out stay the level's, and the
+level's own `tick` (refills coming back) runs by itself after yours.
 
 The demo's lift (`demo/src/stage/lift.rs`) does this with two ends and a pause at each.
 
@@ -37,8 +38,7 @@ impl Terrain for Ferry {
         self.level.solid(r) || r.intersects(self.plat)
     }
 
-    fn update(&mut self, dt: f32, bodies: &[Rect]) {
-        self.level.update(dt, bodies);
+    fn tick(&mut self, _dt: f32, bodies: &[Rect]) {
         self.before = self.plat;
         if self.plat.x <= self.left || self.plat.x >= self.right {
             self.dir = if self.plat.x <= self.left { 1 } else { -1 };
@@ -59,13 +59,7 @@ impl Terrain for Ferry {
         }
     }
 
-    fn base(&self) -> Option<&dyn Terrain> {
-        Some(&self.level)
-    }
-
-    fn base_mut(&mut self) -> Option<&mut dyn Terrain> {
-        Some(&mut self.level)
-    }
+    game_toolkit_platformer::terrain_layer!(level);
 }
 
 let level = Level::parse(&[
@@ -84,7 +78,7 @@ let mut ferry = Ferry {
     level,
 };
 // Standing on the platform as it sets off.
-let mut hero = Platformer::standing(36, 32, Preset::Hybrid);
+let mut hero = Platformer::at(Spot::Feet(36, 32), Preset::Hybrid);
 for _ in 0..30 {
     hero.advance(Intent::default(), &mut ferry, 1.0 / 60.0);
 }

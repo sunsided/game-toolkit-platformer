@@ -37,7 +37,10 @@ adds drivers of your own, run after the built-in one each step, for your game's
 parameters (`hurt`, `attacking`) or to override the built-in values;
 `Builder::without_hero_driver` leaves everything to yours. A parameter that only your
 game writes can also be set between updates through `Platformer::animator`: the built-in
-driver never touches it.
+driver never touches it. A custom move whose look depends on its own state (a charge
+level, a phase) implements `Animate` beside `Ability` and is added with
+`Builder::animated`: its `drive` runs after the built-in driver and before yours.
+`Platformer::set_graph` swaps the graph at runtime, checked like `Builder::graph`.
 
 ## The hero's graph
 

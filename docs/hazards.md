@@ -2,16 +2,16 @@
 
 The controller moves the character; what hurts it, what it picks up and where it comes
 back is your game's. The pattern: after each `update` (or `advance`), test the
-character's `hitbox()` against your things, then act through the facade.
+character's `hitboxes()` against your things, then act through the facade.
 
 | You want | Test | Then |
 |---|---|---|
-| Spikes, lava, a kill plane | the hitbox overlaps it | `respawn()` (a fresh body at the spawn point, an `Event::Respawned`) |
-| Knockback | the hitbox overlaps an enemy | `launch(vx, vy)`: away from it and up; it isn't cut by releasing jump |
-| A spring, a bounce pad | the feet are on it (`hitbox().bottom() == pad.top`) | `launch(0.0, -speed)` |
-| A checkpoint | the hitbox overlaps it | `set_spawn(x, y)` (hitbox top-left; `standing_at(x, floor_y)` works it out from the feet) |
-| A pickup | the hitbox overlaps it | remove it; `refill()` for dashes, air jumps and stamina |
-| A door, a portal | the hitbox overlaps it and a custom button was pressed | `teleport(x, y)` |
+| Spikes, lava, a kill plane | a hitbox overlaps it | `respawn()` (a fresh body at the spawn point, an `Event::Respawned`) |
+| Knockback | a hitbox overlaps an enemy | `launch(vx, vy)`: away from it and up; it isn't cut by releasing jump |
+| A spring, a bounce pad | the feet are on it (`hitbox().bottom() == pad.top`) | `launch(0.0, -speed)`, or make it bouncy ground ([surfaces](surfaces.md)) |
+| A checkpoint | a hitbox overlaps it | `set_spawn(Spot::Feet(x, floor_y))` |
+| A pickup | a hitbox overlaps it | remove it; `refill()` for dashes, air jumps and stamina |
+| A door, a portal | the hitbox overlaps it and a custom button was pressed | `teleport(spot)` |
 | A crushing platform | `Event::Squished` (something solid moved into the character) | `respawn()` |
 | A pit | `Terrain::fell_out` says so | nothing: the character respawns by itself, or with `respawn(false)` on the builder you get `Event::FellOut` and decide |
 
@@ -20,9 +20,23 @@ On a `Level`, mark these with tiles of your own: `Level::parse_with` reads
 `Level::tiles_touching(hitbox)` lists what the character overlaps. On a terrain of your
 own, keep them however you like and test rects.
 
-Test after the update, not before: `hitbox()` is where the last fixed step left the
-character, and the events of that step (`drain_events()`) are still waiting, so a landing
-on a spring and its `Event::Landed` arrive together.
+Dash refill crystals are the one pickup the terrain does handle (`Terrain::refill`):
+the movement decides when one is used (only when a dash has been spent), so it asks.
+Everything else is yours, as above.
+
+## Every step, not every frame
+
+The movement runs in fixed steps of 1/120 s, and a frame takes as many as its time
+covers (up to 8 at 15 frames per second). `hitboxes()` has the hitbox after each step of
+the last frame, `hitbox()` only the last one: test every one, or a spike touched in one
+step and left by the next goes unseen, and how often depends on the frame rate.
+
+Test after the update, not before: the events of those steps (`drain_events()`) are
+still waiting, so a landing on a spring and its `Event::Landed` arrive together.
+
+For a hazard that must react within the step (stop the character in the step it touches
+lava, before the next step moves it on), write an `Ability`: its `after` hook runs every
+step and reaches your terrain through `find_mut`.
 
 ## Example
 
@@ -55,24 +69,46 @@ let mut hero = Platformer::on(&level, Preset::Hybrid);
 let start = hero.hitbox();
 
 let mut respawned = false;
-for _ in 0..120 {
+'frames: for _ in 0..120 {
     hero.advance(Intent { move_x: 1.0, ..Intent::default() }, &mut level, 1.0 / 60.0);
-    let touching: Vec<Tile> = level.tiles_touching(hero.hitbox()).map(|(_, _, t)| t).collect();
-    if touching.contains(&Tile::Custom(SPIKES)) {
-        hero.respawn();
-        respawned = true;
-        break;
+    for r in hero.hitboxes().to_vec() {
+        let touching: Vec<Tile> = level.tiles_touching(r).map(|(_, _, t)| t).collect();
+        if touching.contains(&Tile::Custom(SPIKES)) {
+            hero.respawn();
+            respawned = true;
+            break 'frames;
+        }
+        if touching.contains(&Tile::Custom(CHECKPOINT)) {
+            hero.set_spawn(Spot::Feet(r.x + r.w / 2, r.bottom()));
+        }
     }
-    if touching.contains(&Tile::Custom(CHECKPOINT)) {
-        let r = hero.hitbox();
-        let (x, y) = hero.standing_at(r.x + r.w / 2, r.bottom());
-        hero.set_spawn(x, y);
-    }
-    if touching.contains(&Tile::Custom(SPRING)) && hero.grounded() {
+    let feet = hero.hitbox();
+    if level.tiles_touching(feet).any(|(_, _, t)| t == Tile::Custom(SPRING)) && hero.grounded() {
         hero.launch(0.0, -320.0);
     }
 }
 assert!(respawned, "ran into the spikes");
-assert!(hero.drain_events().contains(&Event::Respawned));
+assert!(hero.drain_events().any(|e| e == Event::Respawned));
 assert!(hero.hitbox().x > start.x, "back at the checkpoint, not the start");
+```
+
+A thin trigger crossed at speed, at 15 frames per second: the last hitbox of each frame
+never touches it, one of the steps' does.
+
+```rust
+use game_toolkit_platformer::prelude::*;
+
+let mut floor = |r: Rect| r.bottom() > 100;
+let trigger = Rect { x: 44, y: 0, w: 1, h: 100 };
+let mut hero = Platformer::at(Spot::Feet(20, 100), Preset::Hybrid);
+let dash = Intent { move_x: 1.0, dash_pressed: true, ..Intent::default() };
+let (mut by_frame, mut by_step) = (false, false);
+for k in 0..8 {
+    let intent = if k == 0 { dash } else { Intent { move_x: 1.0, ..Intent::default() } };
+    hero.advance(intent, &mut floor, 1.0 / 15.0);
+    by_frame |= hero.hitbox().intersects(trigger);
+    by_step |= hero.hitboxes().iter().any(|r| r.intersects(trigger));
+}
+assert!(by_step, "caught in a step between frames");
+assert!(!by_frame, "the frames alone miss it");
 ```

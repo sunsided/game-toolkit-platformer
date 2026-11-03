@@ -3,7 +3,9 @@
 //!
 //! The grip either holds firm or slips ([`Tuning::slip_speed`]); a tired grip (stamina
 //! below [`Tuning::tired_stamina`]) slips regardless.
-//! Wall slides and wall jumps don't need a grab (see `fall` and `jump`).
+//! Only walls whose [`Surface::climbable`](crate::sim::Surface::climbable) is set can be
+//! held (all are, unless the terrain says otherwise). Wall slides and wall jumps don't need a
+//! grab (see `fall` and `jump`).
 
 use super::{Mode, Player};
 use crate::sim::{Event, Intent, Rect, Terrain, Tuning};
@@ -31,7 +33,7 @@ impl Player {
                 if i.grab
                     && self.regrab <= 0.0
                     && self.stamina > 0.0
-                    && self.wall(level, self.facing)
+                    && self.climbable(level, self.facing)
                     && !rising
                 {
                     self.mode = Mode::Climb;
@@ -63,7 +65,7 @@ impl Player {
             h: self.h / 2,
             ..self.rect().shifted(self.facing, 0)
         };
-        if !i.grab || !self.wall(level, self.facing) {
+        if !i.grab || !self.climbable(level, self.facing) {
             self.mode = Mode::Normal;
             ev.push(Event::LetGo);
             return;

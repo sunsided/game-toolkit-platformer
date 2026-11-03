@@ -75,11 +75,11 @@
 //!         t.dash_speed = 260.0;
 //!     })
 //!     .controls(Scheme::PRECISE)
-//!     .spawn_at(40, 160)
+//!     .spawn(Spot::TopLeft(40, 160))
 //!     .respawn(false)
 //!     .build()
 //!     .unwrap();
-//! assert_eq!(hero.world.tuning.air_jumps, 2);
+//! assert_eq!(hero.tuning().air_jumps, 2);
 //! # }
 //! ```
 
@@ -94,7 +94,7 @@ pub mod platformer;
 pub mod sim;
 
 pub use party::Party;
-pub use platformer::{Builder, Platformer};
+pub use platformer::{Animate, Builder, Platformer};
 
 /// Everything a game needs to get started: `use game_toolkit_platformer::prelude::*;`.
 pub mod prelude {
@@ -102,8 +102,11 @@ pub mod prelude {
     #[cfg(feature = "toolkit")]
     pub use crate::controls::{Controls, Scheme};
     pub use crate::party::Party;
-    pub use crate::platformer::{Builder, Platformer};
-    pub use crate::sim::{Event, Intent, JumpKind, Level, Preset, Rect, Terrain, Tile, Tuning};
+    pub use crate::platformer::{Animate, Builder, Platformer};
+    pub use crate::sim::{
+        CustomId, CustomTile, Event, Intent, JumpKind, Level, Preset, Rect, Spot, Surface, Terrain,
+        Tile, Tuning,
+    };
 }
 
 /// The README's code samples, compiled as doc tests.
@@ -115,6 +118,11 @@ struct ReadmeDoctests;
 #[cfg(doctest)]
 #[doc = include_str!("../docs/hazards.md")]
 struct HazardsDoctests;
+
+/// The surfaces recipe's code, compiled as a doc test.
+#[cfg(doctest)]
+#[doc = include_str!("../docs/surfaces.md")]
+struct SurfacesDoctests;
 
 /// The moving-platforms recipe's code, compiled as a doc test.
 #[cfg(doctest)]

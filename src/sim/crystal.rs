@@ -1,6 +1,6 @@
 //! [`Crystal`]: a dash refill floating in the air; used up on touch, back after a while.
 
-use super::{Rect, TILE};
+use super::Rect;
 
 /// A dash refill.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -12,14 +12,15 @@ pub struct Crystal {
 }
 
 impl Crystal {
-    /// A refill filling tile `tx, ty`.
-    pub fn at((tx, ty): (i32, i32)) -> Self {
+    /// A refill filling tile `tx, ty` of `size` units (a [`super::Level`] makes them, with
+    /// [`super::Level::add_refill`]).
+    pub(crate) fn at((tx, ty): (i32, i32), size: i32) -> Self {
         Self {
             area: Rect {
-                x: tx * TILE,
-                y: ty * TILE,
-                w: TILE,
-                h: TILE,
+                x: tx * size,
+                y: ty * size,
+                w: size,
+                h: size,
             },
             cooldown: 0.0,
         }

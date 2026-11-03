@@ -66,7 +66,7 @@ let hero = Platformer::builder()
         t.dash_speed = 260.0;
     })
     .controls(Scheme::PRECISE)             // or another control scheme
-    .spawn_at(40, 160)                     // or .spawn_on(&level), its `P`
+    .spawn(Spot::Feet(40, 172))            // or .spawn(level.start()), its `P`
     .respawn(false)                        // report falling out, don't reset
     .build()?;
 # Ok(())
@@ -85,16 +85,16 @@ The presets lean toward each game's feel by ear; they are not measured copies. `
 
 ## Your world
 
-The character moves through anything that implements `Terrain`, and the only required method is `solid(rect)`, so a closure already counts:
+The character moves through anything that implements `Terrain`: you write `solid(rect)` and `terrain_layer!()` (it builds on nothing), and a closure already is one:
 
 ```rust
 # use game_toolkit_platformer::prelude::*;
 let mut floor = |r: Rect| r.bottom() > 200;
-let mut hero = Platformer::at(40, 100, Preset::Snappy);
+let mut hero = Platformer::at(Spot::Feet(40, 200), Preset::Snappy);
 hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
 ```
 
-The other methods are optional: one-way platforms, dash refills, falling out of the world, a per-step `update` and `carry` for moving ground. `Level` is a ready-made `Terrain`: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `P` spawn), `Level::from_fn` builds one from your tilemap, and `Level::parse_with` adds tiles of your own (spikes, water, goals) that the movement treats as air. To add doors, lifts or boxes, wrap a terrain and name it as the `base`: you write only what changes ([moving platforms](docs/moving-platforms.md) is a recipe). With 16-pixel tiles, `Builder::scale(2)` lets your terrain speak pixels.
+The other methods are optional: one-way platforms, dash refills, falling out of the world, surfaces (ice, conveyors, walls you can't climb, bouncy pads: [surfaces](docs/surfaces.md)), a per-step `tick` and `carry` for moving ground. `Level` is a ready-made `Terrain`: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `P` spawn), `Level::from_fn` builds one from your tilemap, and `Level::parse_with` adds tiles of your own (spikes, water, goals) that the movement treats as air unless `Level::define` makes them solid or one-way platforms. To add doors, lifts or boxes, wrap a terrain and name it as the `base` with `terrain_layer!(level)` (required, so a wrapper can't silently lose its base): you write only what changes ([moving platforms](docs/moving-platforms.md) is a recipe). With 16-pixel tiles, `Builder::scale(2)` lets your terrain speak pixels.
 
 ## Drawing your character
 

@@ -22,7 +22,7 @@ mod jump;
 mod land;
 mod super_dash;
 
-use super::{Event, Intent, JumpKind, Moves, Rect, Terrain, Tuning};
+use super::{Contacts, Event, Intent, JumpKind, Moves, Rect, Terrain, Tuning};
 
 /// The default hitbox width in units ([`Tuning::size`] sets it per character).
 pub const W: i32 = 6;
@@ -87,9 +87,9 @@ pub enum Mode {
     /// A move of your own ([`super::Ability`]) has the body: no built-in move starts or
     /// runs, no gravity; it still moves by its speed, collides and lands.
     Custom {
-        /// Which of your moves, by a number of your choosing (the same kind of number as
+        /// Which of your moves (see [`super::CustomId`]; the same kind of id as
         /// [`Event::Custom`]).
-        id: u32,
+        id: super::CustomId,
         /// Seconds since it started (counted by the movement).
         t: f32,
     },
@@ -173,6 +173,8 @@ pub struct Player {
     pub lift: (f32, f32),
     /// Seconds [`Player::lift`] still counts after leaving what it rode.
     lift_time: f32,
+    /// What its movement ran into in the last step.
+    pub contacts: Contacts,
 }
 
 impl Player {
@@ -216,13 +218,8 @@ impl Player {
             peak_y: y,
             lift: (0.0, 0.0),
             lift_time: 0.0,
+            contacts: Contacts::default(),
         }
-    }
-
-    /// The hitbox's top-left (units) for a body of `(w, h)` standing on `floor_y` (the top
-    /// of the ground), centered on `foot_x`: a spawn point on a terrain of your own.
-    pub fn standing_at(foot_x: i32, floor_y: i32, (w, h): (i32, i32)) -> (i32, i32) {
-        (foot_x - (w + 1) / 2, floor_y - h)
     }
 
     /// Set the speed from outside: a spring, a bounce pad, knockback. Whatever the body was
@@ -337,7 +334,18 @@ impl Player {
         self.fall(level, i, move_x, t, dt, ev);
 
         let landing_vy = self.vy;
-        if self.move_x(level, self.vx * dt) {
+        self.contacts = Contacts::default();
+        let moved_at = ev.len();
+        let toward = if self.vx == 0.0 {
+            0
+        } else {
+            self.vx.signum() as i32
+        };
+        let blocked = self.move_x(level, self.vx * dt);
+        if blocked || self.wall(level, toward) {
+            self.contacts.wall = toward;
+        }
+        if blocked {
             self.vx = 0.0;
             if let Mode::SuperDash { dir } = self.mode {
                 self.super_bonk(dir, ev);
@@ -349,6 +357,13 @@ impl Player {
         }
         self.move_y(level, self.vy * dt, t.corner_correction, ev);
         self.land(level, move_x, landing_vy, jumped, t, ev);
+        for e in &ev[moved_at..] {
+            match e {
+                Event::Bonked => self.contacts.ceiling = true,
+                Event::Landed { .. } => self.contacts.floor = true,
+                _ => {}
+            }
+        }
         self.look(i, move_x, dt);
         self.run_roll(i, t, ev);
     }
@@ -556,7 +571,12 @@ impl Player {
                 } else {
                     t.run_accel
                 };
-                let air = if self.grounded { 1.0 } else { t.air_control };
+                // On the ground, the surface scales the grip (ice, sticky ground).
+                let air = if self.grounded {
+                    level.surface(self.feet()).friction
+                } else {
+                    t.air_control
+                };
                 self.vx = approach(self.vx, target, accel * air * dt);
             }
         }
@@ -645,19 +665,36 @@ impl Player {
         side != 0 && level.solid(self.rect().shifted(side, 0))
     }
 
+    /// Whether a wall the character may hold on to touches the hitbox on `side`: solid,
+    /// and its [`super::Surface`] climbable.
+    pub fn climbable(&self, level: &dyn Terrain, side: i32) -> bool {
+        self.wall(level, side) && level.surface(self.beside(side)).climbable
+    }
+
+    /// The row just under the hitbox.
+    pub fn feet(&self) -> Rect {
+        let r = self.rect();
+        Rect {
+            y: r.bottom(),
+            h: 1,
+            ..r
+        }
+    }
+
+    /// The column just beside the hitbox on `side` (-1 left, 1 right).
+    pub fn beside(&self, side: i32) -> Rect {
+        let r = self.rect();
+        let x = if side > 0 { r.right() } else { r.x - 1 };
+        Rect { x, w: 1, ..r }
+    }
+
     /// What the body rides on: the row under its feet while standing, the column beside it
     /// while holding on to a wall, or nothing.
     pub fn riding(&self) -> Option<Rect> {
-        let r = self.rect();
         if self.grounded {
-            Some(Rect {
-                y: r.bottom(),
-                h: 1,
-                ..r
-            })
+            Some(self.feet())
         } else if self.mode == Mode::Climb {
-            let x = if self.facing > 0 { r.right() } else { r.x - 1 };
-            Some(Rect { x, w: 1, ..r })
+            Some(self.beside(self.facing))
         } else {
             None
         }

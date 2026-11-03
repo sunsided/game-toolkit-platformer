@@ -8,7 +8,7 @@
 //! let mut hero = Platformer::builder()
 //!     .preset(Preset::Snappy)
 //!     .tune(|t| t.jump_speed = 115.0)
-//!     .spawn_on(&level)
+//!     .spawn(level.start())
 //!     .build()
 //!     .unwrap();
 //!
@@ -22,6 +22,7 @@
 //! let _frame = hero.sprite();
 //! ```
 
+mod animate;
 mod scaled;
 
 use std::sync::Arc;
@@ -33,9 +34,11 @@ use crate::anim::{AnimEvent, Animator, Driver, GraphSpec, SpecError};
 use crate::controls::{Controls, Scheme};
 use crate::hero::{HeroDriver, spec};
 use crate::sim::{
-    Ability, DT, Event, Intent, Level, Mode, Player, Preset, Rect, TILE, Terrain, Tuning, World,
+    Ability, Contacts, DT, Event, Intent, Level, Mode, Preset, Rect, Spot, Terrain, Tuning, World,
 };
 
+use animate::AnimHook;
+pub use animate::Animate;
 pub(crate) use scaled::Scaled;
 
 /// At most this many fixed steps per frame, so a hitch doesn't spiral.
@@ -52,16 +55,27 @@ pub(crate) fn steps(acc: &mut f32, dt: f32) -> u32 {
 
 /// One playable character. The world around it is yours: pass your [`Terrain`] (or a
 /// [`Level`]) to each update. For spikes, springs, checkpoints and pickups, test
-/// [`Platformer::hitbox`] after the update and answer with [`Platformer::respawn`],
+/// [`Platformer::hitboxes`] after the update and answer with [`Platformer::respawn`],
 /// [`Platformer::launch`], [`Platformer::set_spawn`] or [`Platformer::refill`]
 /// (`docs/hazards.md` has the recipe).
+///
+/// The methods keep the character consistent: [`Platformer::tune`] or
+/// [`Platformer::set_preset`] for the tuning, [`Platformer::add_ability`] and
+/// [`Platformer::remove_ability`] for abilities, [`Platformer::set_graph`] for the graph,
+/// [`Platformer::set_spawn`] for the spawn. For what they don't cover,
+/// [`Platformer::world_mut`] and [`Platformer::animator_mut`] open the simulation and the
+/// animation; see there for what is safe to change.
 pub struct Platformer {
-    /// The simulation: level, body, tuning. Read it for anything the accessors don't cover.
-    pub world: World,
+    /// The simulation: body, tuning, abilities, events.
+    pub(crate) world: World,
     /// The animation graph's runtime.
-    pub animator: Animator,
+    pub(crate) animator: Animator,
     /// Movement facts and events to graph parameters (unless turned off).
     driver: Option<HeroDriver>,
+    /// Whether the built-in driver runs (kept for [`Platformer::set_graph`]).
+    hero_driver: bool,
+    /// Abilities that drive their own animation parameters.
+    animated: Vec<AnimHook>,
     /// Your own drivers, run after the built-in one each step.
     drivers: Vec<Box<dyn Driver<World>>>,
     /// The preset the tuning came from, if any.
@@ -74,6 +88,8 @@ pub struct Platformer {
     latch: Intent,
     /// The body's position before the last step, for drawing between steps.
     prev: (f32, f32),
+    /// The hitbox after each step of the last frame.
+    hitboxes: Vec<Rect>,
     /// Movement events since the last drain.
     events: Vec<Event>,
     /// Animation events since the last drain.
@@ -81,27 +97,6 @@ pub struct Platformer {
     /// The controls, read from game-toolkit's input in [`Platformer::update`].
     #[cfg(feature = "toolkit")]
     pub controls: Controls,
-}
-
-/// Where a [`Builder`] puts the character.
-#[derive(Clone, Copy, Debug)]
-enum Spawn {
-    /// The hitbox's top-left, in the terrain's pixels.
-    At(i32, i32),
-    /// Standing on `floor`, centered on `x`, in the terrain's pixels.
-    Standing {
-        /// The feet's center.
-        x: i32,
-        /// The top of the ground.
-        floor: i32,
-    },
-    /// Standing on `floor`, centered on `x`, in units (a [`Level`]'s spawn tile).
-    Units {
-        /// The feet's center.
-        x: i32,
-        /// The top of the ground.
-        floor: i32,
-    },
 }
 
 /// Sets up a [`Platformer`]: preset, tuning, controls, animation graph, spawn point.
@@ -120,8 +115,10 @@ pub struct Builder {
     drivers: Vec<Box<dyn Driver<World>>>,
     /// Moves of your own.
     abilities: Vec<Box<dyn Ability>>,
-    /// Where to start.
-    spawn: Spawn,
+    /// Those of them that drive their own animation.
+    animated: Vec<AnimHook>,
+    /// Where to start, in the terrain's space.
+    spawn: Spot,
     /// Put it back at the start after falling out.
     respawn: bool,
     /// Pixels of the terrain per unit.
@@ -129,6 +126,23 @@ pub struct Builder {
     /// The control scheme, or the preset's.
     #[cfg(feature = "toolkit")]
     scheme: Option<Scheme>,
+}
+
+/// The animator for `graph` (or the built-in one) and the built-in driver if it runs:
+/// strict about its parameters unless `partial`.
+fn animation(
+    graph: Option<GraphSpec>,
+    hero_driver: bool,
+    partial: bool,
+) -> Result<(Animator, Option<HeroDriver>), SpecError> {
+    let graph = graph.unwrap_or_else(spec).compile()?;
+    let mut animator = Animator::new(Arc::new(graph));
+    let driver = match (hero_driver, partial) {
+        (false, _) => None,
+        (true, false) => Some(HeroDriver::try_new(&animator.params)?),
+        (true, true) => Some(HeroDriver::declaring(&mut animator.params)),
+    };
+    Ok((animator, driver))
 }
 
 impl Builder {
@@ -181,8 +195,19 @@ impl Builder {
     }
 
     /// A move of your own (an attack lunge, a ledge grab), run in every step; several run
-    /// in the order added. See [`Ability`].
+    /// in the order added. See [`Ability`]; for one with animation of its own, see
+    /// [`Builder::animated`].
     pub fn ability(mut self, ability: impl Ability + Clone + 'static) -> Self {
+        self.abilities.push(Box::new(ability));
+        self
+    }
+
+    /// A move of your own that also drives its animation parameters ([`Animate`]): one
+    /// registration for both halves. Runs as an [`Builder::ability`]; its
+    /// [`Animate::drive`] runs after each step, after the built-in driver and before
+    /// [`Builder::driver`]s.
+    pub fn animated<T: Ability + Animate + Clone + 'static>(mut self, ability: T) -> Self {
+        AnimHook::add(&mut self.animated, AnimHook::of::<T>());
         self.abilities.push(Box::new(ability));
         self
     }
@@ -197,9 +222,9 @@ impl Builder {
     /// Your terrain speaks pixels, `k` of them per unit of the movement (default 1): with
     /// 16-pixel tiles, say, `scale(2)`, so the feel made for 8-unit tiles fits. The
     /// character then converts at its edges: the terrain is asked in your pixels, and
-    /// positions ([`Platformer::position`], [`Platformer::hitbox`], spawn points,
-    /// teleports) and speeds ([`Platformer::velocity`], [`Platformer::launch`]) are in
-    /// them too. [`Platformer::world`], the [`Tuning`], events and drivers stay in units.
+    /// positions ([`Platformer::position`], [`Platformer::hitbox`], every [`Spot`]) and
+    /// speeds ([`Platformer::velocity`], [`Platformer::launch`]) are in them too.
+    /// [`Platformer::world`], the [`Tuning`], events and drivers stay in units.
     ///
     /// A [`Level`] already speaks units: keep the scale at 1 with one and draw it scaled.
     pub fn scale(mut self, k: i32) -> Self {
@@ -208,28 +233,11 @@ impl Builder {
         self
     }
 
-    /// Start with the hitbox's top-left at `x, y` (units, or pixels with a
-    /// [`Builder::scale`]).
-    pub fn spawn_at(mut self, x: i32, y: i32) -> Self {
-        self.spawn = Spawn::At(x, y);
-        self
-    }
-
-    /// Start standing on the ground at height `floor_y` (its top edge), centered on `x`
-    /// (units, or pixels with a [`Builder::scale`]): the way to spawn on a [`Terrain`] of
-    /// your own.
-    pub fn spawn_standing(mut self, x: i32, floor_y: i32) -> Self {
-        self.spawn = Spawn::Standing { x, floor: floor_y };
-        self
-    }
-
-    /// Start standing on `level`'s spawn tile.
-    pub fn spawn_on(mut self, level: &Level) -> Self {
-        let (tx, ty) = level.spawn;
-        self.spawn = Spawn::Units {
-            x: tx * TILE + TILE / 2,
-            floor: (ty + 1) * TILE,
-        };
+    /// Start at `spot` (units, or pixels with a [`Builder::scale`]): `Spot::Feet(x,
+    /// floor_y)` to stand on ground of your own, `level.start()` on a [`Level`]'s spawn
+    /// tile, `Spot::TopLeft(x, y)` for the hitbox's corner.
+    pub fn spawn(mut self, spot: Spot) -> Self {
+        self.spawn = spot;
         self
     }
 
@@ -249,22 +257,9 @@ impl Builder {
 
     /// The character, or why the animation graph doesn't fit.
     pub fn build(self) -> Result<Platformer, SpecError> {
-        let graph = self.graph.unwrap_or_else(spec).compile()?;
-        let mut animator = Animator::new(Arc::new(graph));
-        let driver = match (self.hero_driver, self.partial) {
-            (false, _) => None,
-            (true, false) => Some(HeroDriver::try_new(&animator.params)?),
-            (true, true) => Some(HeroDriver::declaring(&mut animator.params)),
-        };
+        let (animator, driver) = animation(self.graph, self.hero_driver, self.partial)?;
         let k = self.scale;
-        let spawn = match self.spawn {
-            Spawn::At(x, y) => (x.div_euclid(k), y.div_euclid(k)),
-            Spawn::Standing { x, floor } => {
-                Player::standing_at(x.div_euclid(k), floor.div_euclid(k), self.tuning.size)
-            }
-            Spawn::Units { x, floor } => Player::standing_at(x, floor, self.tuning.size),
-        };
-        let mut world = World::new(self.tuning, spawn);
+        let mut world = World::new(self.tuning, self.spawn.in_units(k));
         world.respawn = self.respawn;
         world.abilities = self.abilities;
         Ok(Platformer {
@@ -272,11 +267,14 @@ impl Builder {
             world,
             animator,
             driver,
+            hero_driver: self.hero_driver,
+            animated: self.animated,
             drivers: self.drivers,
             preset: self.preset,
             scale: k,
             acc: 0.0,
             latch: Intent::default(),
+            hitboxes: Vec::new(),
             events: Vec::new(),
             anim_events: Vec::new(),
             #[cfg(feature = "toolkit")]
@@ -292,36 +290,20 @@ impl Platformer {
     /// A character on `level`'s spawn tile with `preset`'s feel and controls and the
     /// built-in animation.
     pub fn on(level: &Level, preset: Preset) -> Self {
+        Self::at(level.start(), preset)
+    }
+
+    /// A character at `spot` (units), otherwise like [`Platformer::on`]: the one-liner for
+    /// a terrain of your own, with `Spot::Feet(x, floor_y)` to stand on its ground.
+    pub fn at(spot: Spot, preset: Preset) -> Self {
         Self::builder()
             .preset(preset)
-            .spawn_on(level)
+            .spawn(spot)
             .build()
             .expect("the built-in animation graph fits the built-in driver")
     }
 
-    /// A character with its hitbox's top-left at `x, y` (units), otherwise like
-    /// [`Platformer::on`]. On a terrain of your own, [`Platformer::standing`] works out
-    /// the top-left from where the feet go.
-    pub fn at(x: i32, y: i32, preset: Preset) -> Self {
-        Self::builder()
-            .preset(preset)
-            .spawn_at(x, y)
-            .build()
-            .expect("the built-in animation graph fits the built-in driver")
-    }
-
-    /// A character standing on the ground at height `floor_y` (its top edge), centered on
-    /// `x` (units), otherwise like [`Platformer::on`]: the one-liner for a terrain of your
-    /// own (see [`Builder::spawn_standing`]).
-    pub fn standing(x: i32, floor_y: i32, preset: Preset) -> Self {
-        Self::builder()
-            .preset(preset)
-            .spawn_standing(x, floor_y)
-            .build()
-            .expect("the built-in animation graph fits the built-in driver")
-    }
-
-    /// Set one up step by step; starts from the hybrid preset at `0, 0`.
+    /// Set one up step by step; starts from the hybrid preset with the hitbox at `0, 0`.
     pub fn builder() -> Builder {
         Builder {
             tuning: Preset::Hybrid.tuning(),
@@ -331,7 +313,8 @@ impl Platformer {
             hero_driver: true,
             drivers: Vec::new(),
             abilities: Vec::new(),
-            spawn: Spawn::At(0, 0),
+            animated: Vec::new(),
+            spawn: Spot::TopLeft(0, 0),
             respawn: true,
             scale: 1,
             #[cfg(feature = "toolkit")]
@@ -355,13 +338,15 @@ impl Platformer {
     /// Advance by `dt` seconds of frame time with `intent` in `terrain`, in fixed steps of
     /// [`DT`].
     /// Presses are kept until the next step, so a frame without one doesn't lose them.
-    /// Returns the steps taken.
+    /// Returns the steps taken; [`Platformer::hitboxes`] then has where each one left the
+    /// character.
     pub fn advance(&mut self, intent: Intent, terrain: &mut dyn Terrain, dt: f32) -> u32 {
+        self.begin_frame();
         self.hold_presses(&intent);
         let n = steps(&mut self.acc, dt);
         for _ in 0..n {
             let i = self.with_presses(intent);
-            self.step(&i, terrain);
+            self.step_once(&i, terrain);
         }
         n
     }
@@ -388,8 +373,14 @@ impl Platformer {
     }
 
     /// Exactly one fixed step of [`DT`] with `intent` in `terrain` (for your own clock,
-    /// replays, tests).
+    /// replays, tests). It counts as a frame of one step for [`Platformer::hitboxes`].
     pub fn step(&mut self, intent: &Intent, terrain: &mut dyn Terrain) {
+        self.begin_frame();
+        self.step_once(intent, terrain);
+    }
+
+    /// One fixed step, within a frame.
+    fn step_once(&mut self, intent: &Intent, terrain: &mut dyn Terrain) {
         self.begin_step();
         if self.scale == 1 {
             self.world.step(terrain, intent);
@@ -414,16 +405,22 @@ impl Platformer {
         self.acc = acc;
     }
 
+    /// Before a frame's steps: forget the last frame's hitboxes.
+    pub(crate) fn begin_frame(&mut self) {
+        self.hitboxes.clear();
+    }
+
     /// Before a step: remember where the body was, to draw between steps.
     pub(crate) fn begin_step(&mut self) {
         self.prev = self.world.player.exact_pos();
     }
 
-    /// After a step: collect its events, drive the animation. A respawn in the step (the
-    /// character fell out) starts the animation over and snaps the drawing, as
+    /// After a step: collect its events and hitbox, drive the animation. A respawn in the
+    /// step (the character fell out) starts the animation over and snaps the drawing, as
     /// [`Platformer::respawn`] does.
     pub(crate) fn end_step(&mut self) {
         self.events.extend(self.world.events.iter().copied());
+        self.hitboxes.push(self.hitbox());
         if self.world.events.contains(&Event::Respawned) {
             self.prev = self.world.player.exact_pos();
             self.animator.reset();
@@ -432,6 +429,9 @@ impl Platformer {
         if let Some(d) = &mut self.driver {
             d.drive(&self.world, &mut self.animator.params);
         }
+        for h in &self.animated {
+            h.run(&self.world, &mut self.animator.params);
+        }
         for d in &mut self.drivers {
             d.drive(&self.world, &mut self.animator.params);
         }
@@ -439,15 +439,16 @@ impl Platformer {
         self.anim_events.extend(self.animator.drain_events());
     }
 
-    /// The movement events since the last call: jumps, landings, dashes, rolls, ...
-    pub fn drain_events(&mut self) -> Vec<Event> {
-        std::mem::take(&mut self.events)
+    /// The movement events since the last call: jumps, landings, dashes, rolls, ... The
+    /// buffer is kept, so draining every frame doesn't allocate (`.collect()` for a `Vec`).
+    pub fn drain_events(&mut self) -> std::vec::Drain<'_, Event> {
+        self.events.drain(..)
     }
 
     /// The animation events since the last call: states entered, markers (`"step"`),
-    /// clips finished.
-    pub fn drain_anim_events(&mut self) -> Vec<AnimEvent> {
-        std::mem::take(&mut self.anim_events)
+    /// clips finished. Like [`Platformer::drain_events`], without allocating.
+    pub fn drain_anim_events(&mut self) -> std::vec::Drain<'_, AnimEvent> {
+        self.anim_events.drain(..)
     }
 
     /// The sprite number to draw (see `hero::sprite`).
@@ -530,9 +531,13 @@ impl Platformer {
         self.world.player.rect().scaled(self.scale)
     }
 
-    /// A position in the terrain's pixels, in units.
-    fn units(&self, (x, y): (i32, i32)) -> (i32, i32) {
-        (x.div_euclid(self.scale), y.div_euclid(self.scale))
+    /// The hitbox after each fixed step of the last frame ([`Platformer::advance`],
+    /// [`Platformer::update`], [`Platformer::step`] or a [`crate::Party`]'s), oldest
+    /// first; empty when the frame took no step. Test hazards and triggers against every
+    /// one: at a low frame rate a frame takes several steps, and a spike touched in one
+    /// of them may be left again by the last ([`Platformer::hitbox`]).
+    pub fn hitboxes(&self) -> &[Rect] {
+        &self.hitboxes
     }
 
     /// Set the speed from outside: a spring, a bounce pad, knockback (units/s, y down). It
@@ -543,11 +548,15 @@ impl Platformer {
         self.world.player.launch(vx / k, vy / k);
     }
 
-    /// Put the hitbox's top-left at `x, y` (units) at once, without drawing it sliding
-    /// there: a door, a portal. Speed and state stay; see
-    /// [`Player::teleport`](crate::sim::Player::teleport).
-    pub fn teleport(&mut self, x: i32, y: i32) {
-        let (x, y) = self.units((x, y));
+    /// The hitbox's top-left in units for a body at `spot` in the terrain's space.
+    fn top_left(&self, spot: Spot) -> (i32, i32) {
+        spot.in_units(self.scale).top_left(self.world.tuning.size)
+    }
+
+    /// Put the character at `spot` at once, without drawing it sliding there: a door, a
+    /// portal. Speed and state stay; see [`Player::teleport`](crate::sim::Player::teleport).
+    pub fn teleport(&mut self, spot: Spot) {
+        let (x, y) = self.top_left(spot);
         self.world.player.teleport(x, y);
         self.prev = self.world.player.exact_pos();
     }
@@ -558,33 +567,29 @@ impl Platformer {
         self.respawn_in_units(self.world.spawn);
     }
 
-    /// Start over with the hitbox's top-left at `x, y` (units), like
-    /// [`Platformer::respawn`], without moving the spawn point.
-    pub fn respawn_at(&mut self, x: i32, y: i32) {
-        self.respawn_in_units(self.units((x, y)));
+    /// Start over at `spot`, like [`Platformer::respawn`], without moving the spawn point.
+    pub fn respawn_at(&mut self, spot: Spot) {
+        self.respawn_in_units(spot.in_units(self.scale));
     }
 
-    /// [`Platformer::respawn_at`] with the hitbox's top-left `at` in units.
-    fn respawn_in_units(&mut self, at: (i32, i32)) {
+    /// [`Platformer::respawn_at`] with `at` in units.
+    fn respawn_in_units(&mut self, at: Spot) {
         self.world.respawn_at(at);
         self.events.push(Event::Respawned);
+        self.hitboxes.push(self.hitbox());
         self.prev = self.world.player.exact_pos();
         self.animator.reset();
     }
 
-    /// The hitbox's top-left (units) for this character standing on `floor_y` (the top of
-    /// the ground), centered on `x`: for [`Platformer::set_spawn`],
-    /// [`Platformer::teleport`] and [`Platformer::respawn_at`] on a terrain of your own.
-    pub fn standing_at(&self, x: i32, floor_y: i32) -> (i32, i32) {
-        let (x, floor_y) = self.units((x, floor_y));
-        let (x, y) = Player::standing_at(x, floor_y, self.world.tuning.size);
-        (x * self.scale, y * self.scale)
+    /// Where [`Platformer::respawn`] (and falling out) puts the character from now on: a
+    /// checkpoint.
+    pub fn set_spawn(&mut self, spot: Spot) {
+        self.world.spawn = spot.in_units(self.scale);
     }
 
-    /// Where [`Platformer::respawn`] (and falling out) puts the character from now on
-    /// (hitbox top-left, units): a checkpoint.
-    pub fn set_spawn(&mut self, x: i32, y: i32) {
-        self.world.spawn = self.units((x, y));
+    /// The spawn point (units, or pixels with a [`Builder::scale`]).
+    pub fn spawn(&self) -> Spot {
+        self.world.spawn.in_pixels(self.scale)
     }
 
     /// Refill dashes, air jumps and climbing stamina: a pickup, a checkpoint.
@@ -612,6 +617,113 @@ impl Platformer {
             self.controls = Controls::for_preset(preset);
             self.controls.scheme.custom = custom;
         }
+    }
+
+    /// Change the tuning at runtime, e.g. `hero.tune(|t| t.air_jumps = 2)` for a power-up.
+    /// The feel is no longer a preset's: [`Platformer::preset`] says `None` from now on
+    /// (the controls stay). A new [`Tuning::size`] takes effect at the next respawn.
+    pub fn tune(&mut self, f: impl FnOnce(&mut Tuning)) {
+        f(&mut self.world.tuning);
+        self.preset = None;
+    }
+
+    /// Add a move of your own at runtime (a power-up), run after the ones already there.
+    /// See [`Builder::ability`].
+    pub fn add_ability(&mut self, ability: impl Ability + Clone + 'static) {
+        self.world.abilities.push(Box::new(ability));
+    }
+
+    /// Add a move of your own with animation of its own at runtime. See
+    /// [`Builder::animated`]; declare its parameters in the graph.
+    pub fn add_animated<T: Ability + Animate + Clone + 'static>(&mut self, ability: T) {
+        AnimHook::add(&mut self.animated, AnimHook::of::<T>());
+        self.world.abilities.push(Box::new(ability));
+    }
+
+    /// Take away the first move of type `T` (a power-up that runs out) and return it. Its
+    /// [`Animate`] half stops with it; the other abilities keep driving their own
+    /// animation.
+    pub fn remove_ability<T: Ability + Clone + 'static>(&mut self) -> Option<T> {
+        let i = self
+            .world
+            .abilities
+            .iter()
+            .position(|a| a.as_any().is::<T>())?;
+        let removed = self.world.abilities.remove(i);
+        if self.world.ability::<T>().is_none() {
+            let ty = std::any::TypeId::of::<T>();
+            self.animated.retain(|h| h.ty != ty);
+        }
+        removed.as_any().downcast_ref::<T>().cloned()
+    }
+
+    /// The first move of type `T`, to read its state (a charge level, a phase).
+    pub fn ability<T: Ability + 'static>(&self) -> Option<&T> {
+        self.world.ability()
+    }
+
+    /// [`Platformer::ability`], to change (top up a charge, reset a cooldown).
+    pub fn ability_mut<T: Ability + 'static>(&mut self) -> Option<&mut T> {
+        self.world.ability_mut()
+    }
+
+    /// What the body's own movement ran into in the last step: a wall, a ceiling, the
+    /// floor (see [`Contacts`]).
+    pub fn contacts(&self) -> Contacts {
+        self.world.player.contacts
+    }
+
+    /// The movement feel in effect (change it with [`Platformer::tune`]).
+    pub fn tuning(&self) -> &Tuning {
+        &self.world.tuning
+    }
+
+    /// The simulation, to read anything the methods don't cover: the body
+    /// (`world().player`), the step count, the last step's events.
+    pub fn world(&self) -> &World {
+        &self.world
+    }
+
+    /// The simulation, to change what the methods don't cover. You keep it consistent:
+    /// safe are the body (`player`: speed, refills, facing) and `respawn`; go through
+    /// [`Platformer::tune`], [`Platformer::add_ability`], [`Platformer::remove_ability`]
+    /// and [`Platformer::set_spawn`] for the rest (the spawn is in units here, not in a
+    /// [`Builder::scale`]'s pixels).
+    pub fn world_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+
+    /// The animation graph's runtime: its state, parameters, clip times.
+    pub fn animator(&self) -> &Animator {
+        &self.animator
+    }
+
+    /// The animation graph's runtime, to change. Safe: parameters only your game sets
+    /// (`params`); the drivers overwrite theirs every step. Swap the graph with
+    /// [`Platformer::set_graph`].
+    pub fn animator_mut(&mut self) -> &mut Animator {
+        &mut self.animator
+    }
+
+    /// Swap the animation graph at runtime, checked like [`Builder::graph`]: it must
+    /// declare the built-in driver's parameters (unless that is off). The animation starts
+    /// over from the new graph's entry state; on an error nothing changes.
+    pub fn set_graph(&mut self, graph: GraphSpec) -> Result<(), SpecError> {
+        self.swap_graph(graph, false)
+    }
+
+    /// [`Platformer::set_graph`] for a graph that declares only what it uses, like
+    /// [`Builder::partial_graph`].
+    pub fn set_partial_graph(&mut self, graph: GraphSpec) -> Result<(), SpecError> {
+        self.swap_graph(graph, true)
+    }
+
+    /// [`Platformer::set_graph`], strict unless `partial`.
+    fn swap_graph(&mut self, graph: GraphSpec, partial: bool) -> Result<(), SpecError> {
+        let (animator, driver) = animation(Some(graph), self.hero_driver, partial)?;
+        self.animator = animator;
+        self.driver = driver;
+        Ok(())
     }
 }
 
@@ -642,7 +754,6 @@ mod tests {
         hero.advance(held, &mut level, 1.0 / 60.0);
         assert!(
             hero.drain_events()
-                .iter()
                 .any(|e| matches!(e, Event::Jumped { .. }))
         );
         assert_eq!(hero.state(), "takeoff");
@@ -744,7 +855,7 @@ mod tests {
         );
         let mut hero = Platformer::builder()
             .partial_graph(two_state_graph())
-            .spawn_at(20, 40)
+            .spawn(Spot::TopLeft(20, 40))
             .build()
             .unwrap();
         idle(&mut hero);
@@ -767,7 +878,7 @@ mod tests {
                     let id = p.id("fast").unwrap();
                     p.set_bool(id, w.player.vx.abs() > 50.0);
                 })
-                .spawn_at(20, 88)
+                .spawn(Spot::TopLeft(20, 88))
                 .build()
                 .unwrap();
             for _ in 0..30 {
@@ -798,7 +909,7 @@ mod tests {
                 let id = p.id("grounded").unwrap();
                 p.set_bool(id, false);
             })
-            .spawn_at(20, 88)
+            .spawn(Spot::TopLeft(20, 88))
             .build()
             .unwrap();
         idle(&mut h);
@@ -814,12 +925,12 @@ mod tests {
     /// One frame of 1/60 s without input on the flat floor.
     fn idle(hero: &mut Platformer) -> Vec<Event> {
         hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
-        hero.drain_events()
+        hero.drain_events().collect()
     }
 
     #[test]
     fn a_launch_is_not_cut_and_leaves_the_ground() {
-        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        let mut hero = Platformer::at(Spot::TopLeft(20, 88), Preset::Precise);
         idle(&mut hero);
         assert!(hero.world.player.grounded);
         hero.launch(0.0, -300.0);
@@ -833,7 +944,7 @@ mod tests {
 
     #[test]
     fn a_launch_ends_a_dash() {
-        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        let mut hero = Platformer::at(Spot::TopLeft(20, 88), Preset::Precise);
         idle(&mut hero);
         let dash = Intent {
             move_x: 1.0,
@@ -853,10 +964,10 @@ mod tests {
 
     #[test]
     fn a_teleport_snaps_without_smearing() {
-        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        let mut hero = Platformer::at(Spot::TopLeft(20, 88), Preset::Precise);
         // Half a step of leftover time, so drawing would blend between two positions.
         hero.advance(Intent::default(), &mut floor, 1.5 * DT);
-        hero.teleport(150, 40);
+        hero.teleport(Spot::TopLeft(150, 40));
         assert_eq!(hero.position(), (150.0, 40.0));
         assert_eq!(hero.hitbox().x, 150);
         // It falls from there to the floor and lands.
@@ -876,7 +987,7 @@ mod tests {
 
     #[test]
     fn respawning_resets_body_and_animation_and_says_so() {
-        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        let mut hero = Platformer::at(Spot::TopLeft(20, 88), Preset::Precise);
         let run = Intent {
             move_x: 1.0,
             ..Intent::default()
@@ -888,27 +999,27 @@ mod tests {
         hero.drain_events();
         assert_ne!(hero.state(), "idle");
 
-        hero.set_spawn(60, 88);
+        hero.set_spawn(Spot::TopLeft(60, 88));
         hero.respawn();
-        assert_eq!(hero.drain_events(), vec![Event::Respawned]);
+        assert_eq!(hero.drain_events().collect::<Vec<_>>(), [Event::Respawned]);
         assert_eq!(hero.hitbox().x, 60);
         assert_eq!(hero.position(), (60.0, 88.0));
         assert_eq!(hero.world.player.vx, 0.0);
         assert_eq!(hero.world.player.dashes, hero.world.tuning.dashes);
         assert_eq!(hero.state(), "idle");
 
-        hero.respawn_at(100, 88);
+        hero.respawn_at(Spot::TopLeft(100, 88));
         assert_eq!(hero.hitbox().x, 100);
         assert_eq!(
-            hero.world.spawn,
-            (60, 88),
+            hero.spawn(),
+            Spot::TopLeft(60, 88),
             "respawn_at doesn't move the spawn"
         );
     }
 
     #[test]
     fn refill_restores_dashes_air_jumps_and_stamina() {
-        let mut hero = Platformer::at(20, 88, Preset::Snappy);
+        let mut hero = Platformer::at(Spot::TopLeft(20, 88), Preset::Snappy);
         let p = &mut hero.world.player;
         (p.dashes, p.air_jumps, p.stamina) = (0, 0, 0.0);
         hero.refill();
@@ -922,7 +1033,7 @@ mod tests {
     #[test]
     fn spawning_standing_on_a_custom_floor_or_a_level_tile() {
         let mut hero = Platformer::builder()
-            .spawn_standing(50, 100)
+            .spawn(Spot::Feet(50, 100))
             .build()
             .unwrap();
         let r = hero.hitbox();
@@ -930,13 +1041,15 @@ mod tests {
         let events = idle(&mut hero);
         assert!(hero.world.player.grounded, "stands at once");
         assert!(events.is_empty(), "no fall, no landing: {events:?}");
-        assert_eq!(hero.standing_at(50, 100), (r.x, r.y));
+        assert_eq!(Spot::Feet(50, 100).top_left((r.w, r.h)), (r.x, r.y));
 
-        // On a level, the same as the level's own spawn point.
+        // On a level, standing on the bottom of the spawn tile, centered on it.
         let level = Level::demo();
         let hero = Platformer::on(&level, Preset::Hybrid);
-        let (x, y) = level.spawn_point(crate::sim::player::W, crate::sim::player::H);
-        assert_eq!((hero.hitbox().x, hero.hitbox().y), (x, y));
+        let (sx, sy) = level.spawn_tile();
+        let r = hero.hitbox();
+        assert_eq!((r.x + r.w / 2, r.bottom()), (sx * 8 + 4, (sy + 1) * 8));
+        assert_eq!(level.start(), Spot::Feet(sx * 8 + 4, (sy + 1) * 8));
     }
 
     #[test]
@@ -944,19 +1057,20 @@ mod tests {
         let mut level = Level::demo();
         let mut hero = Platformer::builder()
             .tune(|t| t.size = (10, 20))
-            .spawn_on(&level)
+            .spawn(level.start())
             .build()
             .unwrap();
         let r = hero.hitbox();
         assert_eq!((r.w, r.h), (10, 20));
-        let (sx, sy) = level.spawn;
-        assert_eq!(r.bottom(), (sy + 1) * TILE, "stands on the spawn tile");
-        assert_eq!(r.x + r.w / 2, sx * TILE + TILE / 2, "centered on it");
+        let (sx, sy) = level.spawn_tile();
+        let t = level.tile_size();
+        assert_eq!(r.bottom(), (sy + 1) * t, "stands on the spawn tile");
+        assert_eq!(r.x + r.w / 2, sx * t + t / 2, "centered on it");
         for _ in 0..30 {
             hero.advance(Intent::default(), &mut level, 1.0 / 60.0);
         }
         assert!(hero.world.player.grounded);
-        assert_eq!(hero.hitbox().bottom(), (sy + 1) * TILE);
+        assert_eq!(hero.hitbox().bottom(), (sy + 1) * t);
 
         hero.set_preset(Preset::Momentum);
         hero.respawn();
@@ -965,7 +1079,9 @@ mod tests {
 
     #[test]
     fn abilities_from_the_builder_run_with_custom_buttons() {
-        use crate::sim::{Mode, Step};
+        use crate::sim::{CustomId, Mode, Step};
+        /// The brake's mode and event.
+        const BRAKE: CustomId = CustomId::new("tests::brake");
         /// Custom button 0 stops the character dead, in a mode of its own for 0.1 s.
         #[derive(Clone, Debug)]
         struct Brake;
@@ -973,18 +1089,18 @@ mod tests {
             fn before(&mut self, s: &mut Step<'_>) {
                 match s.player.mode {
                     Mode::Normal if s.intent.pressed(0) => {
-                        s.player.mode = Mode::Custom { id: 9, t: 0.0 };
+                        s.player.mode = Mode::Custom { id: BRAKE, t: 0.0 };
                         s.player.vx = 0.0;
-                        s.events.push(Event::Custom(9));
+                        s.events.push(Event::custom(BRAKE));
                     }
-                    Mode::Custom { id: 9, t } if t >= 0.1 => s.player.mode = Mode::Normal,
+                    Mode::Custom { id: BRAKE, t } if t >= 0.1 => s.player.mode = Mode::Normal,
                     _ => {}
                 }
             }
         }
         let mut hero = Platformer::builder()
             .ability(Brake)
-            .spawn_at(20, 88)
+            .spawn(Spot::TopLeft(20, 88))
             .build()
             .unwrap();
         let run = Intent {
@@ -1002,7 +1118,7 @@ mod tests {
         };
         hero.advance(brake, &mut floor, 0.0);
         hero.advance(run, &mut floor, DT);
-        assert!(hero.drain_events().contains(&Event::Custom(9)));
+        assert!(hero.drain_events().any(|e| e == Event::custom(BRAKE)));
         assert_eq!(hero.world.player.vx, 0.0, "the run doesn't accelerate it");
         for _ in 0..10 {
             hero.advance(run, &mut floor, 1.0 / 60.0);
@@ -1015,7 +1131,7 @@ mod tests {
     fn a_closure_is_enough_terrain_and_falling_out_respawns_or_not() {
         // A floor at y = 100 from x = 0 to 200; beyond it, a drop into nothing.
         let mut floor = |r: Rect| r.bottom() > 100 && r.x < 200;
-        let mut hero = Platformer::at(20, 88, Preset::Hybrid);
+        let mut hero = Platformer::at(Spot::TopLeft(20, 88), Preset::Hybrid);
         for _ in 0..30 {
             hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
         }
@@ -1031,9 +1147,10 @@ mod tests {
             fn fell_out(&self, r: Rect) -> bool {
                 r.y > 300
             }
+            crate::terrain_layer!();
         }
         let mut hero = Platformer::builder()
-            .spawn_at(220, 50)
+            .spawn(Spot::TopLeft(220, 50))
             .respawn(false)
             .build()
             .unwrap();
@@ -1047,10 +1164,10 @@ mod tests {
     }
     #[test]
     fn standing_spawns_like_the_builder_route() {
-        let mut hero = Platformer::standing(50, 100, Preset::Snappy);
+        let mut hero = Platformer::at(Spot::Feet(50, 100), Preset::Snappy);
         let built = Platformer::builder()
             .preset(Preset::Snappy)
-            .spawn_standing(50, 100)
+            .spawn(Spot::Feet(50, 100))
             .build()
             .unwrap();
         assert_eq!(hero.hitbox(), built.hitbox());
@@ -1062,7 +1179,7 @@ mod tests {
 
     #[test]
     fn accessors_match_the_body() {
-        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        let mut hero = Platformer::at(Spot::TopLeft(20, 88), Preset::Precise);
         let run = Intent {
             move_x: 1.0,
             ..Intent::default()
@@ -1106,21 +1223,22 @@ mod tests {
             fn fell_out(&self, r: Rect) -> bool {
                 r.y > 300
             }
+            crate::terrain_layer!();
         }
-        let mut hero = Platformer::at(180, 88, Preset::Hybrid);
+        let mut hero = Platformer::at(Spot::TopLeft(180, 88), Preset::Hybrid);
         let run = Intent {
             move_x: 1.0,
             ..Intent::default()
         };
         let entry = {
-            let mut h = Platformer::at(20, 88, Preset::Hybrid);
+            let mut h = Platformer::at(Spot::TopLeft(20, 88), Preset::Hybrid);
             h.respawn();
             h.state().to_owned()
         };
         let mut respawned = false;
         for _ in 0..600 {
             hero.step(&run, &mut Pit);
-            if hero.drain_events().contains(&Event::Respawned) {
+            if hero.drain_events().any(|e| e == Event::Respawned) {
                 respawned = true;
                 break;
             }
@@ -1144,11 +1262,11 @@ mod tests {
         let units = |r: Rect| r.bottom() > 100 || r.right() > 200 || (r.x < 60 && r.bottom() > 76);
         let pixels =
             |r: Rect| r.bottom() > 200 || r.right() > 400 || (r.x < 120 && r.bottom() > 152);
-        let mut a = Platformer::standing(100, 100, Preset::Snappy);
+        let mut a = Platformer::at(Spot::Feet(100, 100), Preset::Snappy);
         let mut b = Platformer::builder()
             .preset(Preset::Snappy)
             .scale(2)
-            .spawn_standing(200, 200)
+            .spawn(Spot::Feet(200, 200))
             .build()
             .unwrap();
         assert_eq!(b.hitbox(), a.hitbox().scaled(2));
@@ -1164,7 +1282,7 @@ mod tests {
             a.advance(script(k), &mut units.clone(), 1.0 / 60.0);
             b.advance(script(k), &mut pixels.clone(), 1.0 / 60.0);
             assert_eq!(b.hitbox(), a.hitbox().scaled(2), "frame {k}");
-            assert_eq!(a.drain_events(), b.drain_events(), "frame {k}");
+            assert!(a.drain_events().eq(b.drain_events()), "frame {k}");
             let ((ax, ay), (bx, by)) = (a.position(), b.position());
             assert!((bx - 2.0 * ax).abs() < 1e-3 && (by - 2.0 * ay).abs() < 1e-3);
             let ((avx, avy), (bvx, bvy)) = (a.velocity(), b.velocity());
@@ -1172,17 +1290,249 @@ mod tests {
         }
 
         // In and out of the facade: pixels.
-        b.teleport(240, 100);
+        b.teleport(Spot::TopLeft(240, 100));
         assert_eq!((b.hitbox().x, b.hitbox().y), (240, 100));
         assert_eq!((b.world.player.x, b.world.player.y), (120, 50));
         b.launch(-200.0, 0.0);
         assert_eq!(b.velocity(), (-200.0, 0.0));
         assert_eq!(b.world.player.vx, -100.0);
-        let (sx, sy) = b.standing_at(200, 200);
-        let (ux, uy) = a.standing_at(100, 100);
-        assert_eq!((sx, sy), (ux * 2, uy * 2));
-        b.set_spawn(sx, sy);
+        b.set_spawn(Spot::Feet(200, 200));
+        assert_eq!(b.spawn(), Spot::Feet(200, 200));
         b.respawn();
-        assert_eq!((b.hitbox().x, b.hitbox().y), (sx, sy));
+        a.respawn_at(Spot::Feet(100, 100));
+        assert_eq!(b.hitbox(), a.hitbox().scaled(2));
+        assert_eq!(b.hitbox().bottom(), 200);
+    }
+
+    #[test]
+    fn hitboxes_hold_every_step_of_the_frame() {
+        let mut hero = Platformer::at(Spot::Feet(20, 100), Preset::Hybrid);
+        let run = Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        };
+        assert_eq!(hero.advance(run, &mut floor, 1.0 / 15.0), 8);
+        let boxes = hero.hitboxes().to_vec();
+        assert_eq!(boxes.len(), 8);
+        assert_eq!(*boxes.last().unwrap(), hero.hitbox());
+        assert!(boxes.windows(2).all(|p| p[0].x <= p[1].x), "{boxes:?}");
+        assert!(boxes[0].x < boxes[7].x, "moved along");
+        // A frame without a step has none; a single step has one.
+        hero.advance(run, &mut floor, 0.0);
+        assert!(hero.hitboxes().is_empty());
+        hero.step(&run, &mut floor);
+        assert_eq!(hero.hitboxes(), [hero.hitbox()]);
+    }
+
+    #[test]
+    fn runtime_changes_keep_the_facade_consistent() {
+        let mut hero = Platformer::at(Spot::Feet(20, 100), Preset::Snappy);
+        hero.tune(|t| t.air_jumps = 3);
+        assert_eq!(hero.world.tuning.air_jumps, 3);
+        assert_eq!(hero.preset(), None, "no longer the preset's feel");
+        hero.set_preset(Preset::Precise);
+        assert_eq!(hero.preset(), Some(Preset::Precise));
+
+        // A graph without the built-in driver's parameters is refused, and nothing changes.
+        let tiny = GraphSpec::new().state(StateSpec::new(
+            "idle",
+            Clip::uniform(Playback::Loop, &[0], 0.1),
+        ));
+        let before = hero.state().to_owned();
+        assert!(matches!(
+            hero.set_graph(tiny.clone()),
+            Err(SpecError::UnknownParam(_))
+        ));
+        assert_eq!(hero.state(), before);
+        hero.set_partial_graph(two_state_graph()).unwrap();
+        idle(&mut hero);
+        assert_eq!(hero.state(), "idle", "the new graph runs, driven");
+        hero.set_graph(spec()).unwrap();
+        idle(&mut hero);
+        assert_eq!(hero.state(), "idle");
+    }
+
+    /// Holding custom button 0 powers up; the level drives `power` and `powering`.
+    #[derive(Clone, Debug, Default)]
+    struct Charge {
+        /// Seconds charged.
+        level: f32,
+    }
+
+    impl Ability for Charge {
+        fn before(&mut self, s: &mut crate::sim::Step<'_>) {
+            if s.intent.held(0) {
+                self.level += s.dt;
+                s.moves.max_run = 0.0;
+            } else {
+                self.level = 0.0;
+            }
+        }
+    }
+
+    impl Animate for Charge {
+        fn drive(&self, _world: &World, p: &mut Params) {
+            let (power, powering) = (p.id("power").unwrap(), p.id("powering").unwrap());
+            p.set_float(power, self.level);
+            p.set_bool(powering, self.level > 0.0);
+        }
+    }
+
+    #[test]
+    fn an_animated_ability_drives_its_own_parameters() {
+        use crate::anim::{Cond, TransitionSpec};
+        let graph = spec()
+            .float("power")
+            .bool("powering")
+            .state(StateSpec::new(
+                "power",
+                Clip::uniform(Playback::Loop, &[0], 0.1),
+            ))
+            .transition(TransitionSpec::new(
+                ["idle"],
+                "power",
+                Cond::Is("powering".into()),
+            ));
+        let mut hero = Platformer::builder()
+            .graph(graph.clone())
+            .animated(Charge::default())
+            .spawn(Spot::Feet(20, 100))
+            .build()
+            .unwrap();
+        idle(&mut hero);
+        let hold = Intent {
+            custom: 1,
+            ..Intent::default()
+        };
+        for _ in 0..30 {
+            hero.advance(hold, &mut floor, 1.0 / 60.0);
+        }
+        let charge = hero.animator.params.id("power").unwrap();
+        assert!((hero.animator.params.get_float(charge) - 0.5).abs() < 0.02);
+        assert_eq!(hero.state(), "power");
+        assert_eq!(
+            hero.world.ability::<Charge>().map(|c| c.level > 0.4),
+            Some(true)
+        );
+
+        // Added at runtime, the same.
+        let mut hero = Platformer::builder()
+            .graph(graph)
+            .spawn(Spot::Feet(20, 100))
+            .build()
+            .unwrap();
+        hero.add_ability(Brakes);
+        hero.add_animated(Charge::default());
+        for _ in 0..10 {
+            hero.advance(hold, &mut floor, 1.0 / 60.0);
+        }
+        assert_eq!(hero.state(), "power");
+        assert_eq!(hero.world.abilities.len(), 2);
+    }
+
+    #[test]
+    fn removing_or_reordering_abilities_keeps_each_driving_its_own_animation() {
+        let graph = spec().float("power").bool("powering");
+        let mut hero = Platformer::builder()
+            .partial_graph(graph)
+            .ability(Brakes)
+            .animated(Charge::default())
+            .spawn(Spot::Feet(20, 100))
+            .build()
+            .unwrap();
+        idle(&mut hero);
+        let hold = Intent {
+            custom: 1,
+            ..Intent::default()
+        };
+        let power = hero.animator().params.id("power").unwrap();
+        let charged = |hero: &Platformer| hero.animator().params.get_float(power);
+
+        // The ability before it goes: the charge still drives `power`.
+        assert!(hero.remove_ability::<Brakes>().is_some());
+        assert!(
+            hero.remove_ability::<Brakes>().is_none(),
+            "only one was there"
+        );
+        for _ in 0..15 {
+            hero.advance(hold, &mut floor, 1.0 / 60.0);
+        }
+        assert!(charged(&hero) > 0.2, "{}", charged(&hero));
+
+        // Reordered through the world: the same.
+        hero.add_ability(Brakes);
+        hero.world_mut().abilities.reverse();
+        for _ in 0..15 {
+            hero.advance(hold, &mut floor, 1.0 / 60.0);
+        }
+        assert!(charged(&hero) > 0.45, "{}", charged(&hero));
+        assert_eq!(
+            hero.ability::<Charge>().map(|c| c.level),
+            Some(charged(&hero))
+        );
+        hero.ability_mut::<Charge>().unwrap().level = 2.0;
+        assert_eq!(hero.ability::<Charge>().unwrap().level, 2.0);
+
+        // Removed itself: its hook goes with it, the parameter stays where it was.
+        let removed = hero.remove_ability::<Charge>().unwrap();
+        assert_eq!(removed.level, 2.0);
+        let before = charged(&hero);
+        for _ in 0..15 {
+            hero.advance(hold, &mut floor, 1.0 / 60.0);
+        }
+        assert_eq!(charged(&hero), before);
+        assert!(hero.animated.is_empty());
+
+        // Adding the same kind twice drives it once.
+        hero.add_animated(Charge::default());
+        hero.add_animated(Charge::default());
+        assert_eq!(hero.animated.len(), 1);
+    }
+
+    #[test]
+    fn accessors_read_what_games_need_without_the_world() {
+        let mut hero = Platformer::builder()
+            .tune(|t| t.air_jumps = 2)
+            .spawn(Spot::Feet(20, 100))
+            .build()
+            .unwrap();
+        assert_eq!(hero.tuning().air_jumps, 2);
+        // Run into a wall at x = 60.
+        let mut walled = |r: Rect| r.bottom() > 100 || r.right() > 60;
+        let run = Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        };
+        let mut hit = false;
+        for _ in 0..30 {
+            hero.advance(run, &mut walled, 1.0 / 60.0);
+            hit |= hero.contacts().wall == 1;
+        }
+        assert!(hit, "ran into the wall");
+        assert_eq!(hero.contacts(), hero.world().player.contacts);
+        assert_eq!(hero.animator().state_name(), hero.state());
+    }
+
+    /// An ability that does nothing, to sit before another.
+    #[derive(Clone, Debug)]
+    struct Brakes;
+
+    impl Ability for Brakes {}
+
+    #[test]
+    fn draining_keeps_the_buffers() {
+        let mut hero = Platformer::at(Spot::Feet(20, 100), Preset::Hybrid);
+        let jump = Intent {
+            jump_pressed: true,
+            jump_held: true,
+            ..Intent::default()
+        };
+        hero.advance(jump, &mut floor, 1.0 / 60.0);
+        let cap = hero.events.capacity();
+        assert!(hero.drain_events().count() > 0);
+        assert_eq!(hero.events.capacity(), cap, "no new allocation next frame");
+        assert!(hero.drain_events().next().is_none());
+        hero.drain_anim_events().for_each(drop);
+        assert!(hero.anim_events.capacity() > 0);
     }
 }

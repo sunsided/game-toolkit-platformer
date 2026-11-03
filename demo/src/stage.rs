@@ -9,8 +9,6 @@ pub mod lift;
 pub mod push_pull;
 pub mod shove;
 
-use std::any::Any;
-
 pub use block::Block;
 pub use grip::Grip;
 pub use lift::Lift;
@@ -100,8 +98,8 @@ impl Terrain for Stage {
         self.solid_except(r, None)
     }
 
-    fn update(&mut self, dt: f32, bodies: &[Rect]) {
-        self.level.update(dt, bodies);
+    // The level's refills come back by themselves: its own tick runs after this one.
+    fn tick(&mut self, dt: f32, bodies: &[Rect]) {
         for l in &mut self.lifts {
             l.update(dt, bodies);
         }
@@ -124,17 +122,7 @@ impl Terrain for Stage {
             .unwrap_or((0.0, 0.0))
     }
 
-    fn base(&self) -> Option<&dyn Terrain> {
-        Some(&self.level)
-    }
-
-    fn base_mut(&mut self) -> Option<&mut dyn Terrain> {
-        Some(&mut self.level)
-    }
-
-    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
-        Some(self)
-    }
+    game_toolkit_platformer::terrain_layer!(level);
 }
 
 #[cfg(test)]

@@ -5,16 +5,16 @@
 use game_toolkit::prelude::*;
 
 use crate::Platformer;
-use crate::sim::{Level, TILE, Tile};
+use crate::sim::{Level, Tile};
 
 impl Level {
     /// Draw the tiles and the dash refills that are there with `p`, the level's
     /// top-left at `origin` (window pixels), `scale` window pixels per unit.
     pub fn draw_debug(&self, p: &mut Painter<'_>, origin: [f32; 2], scale: f32) {
         let at = |x: f32, y: f32| [origin[0] + x * scale, origin[1] + y * scale];
-        let t = TILE as f32;
-        for ty in 0..self.h {
-            for tx in 0..self.w {
+        let t = self.tile_size() as f32;
+        for ty in 0..self.height() {
+            for tx in 0..self.width() {
                 let (x, y) = (tx as f32 * t, ty as f32 * t);
                 match self.tile(tx, ty) {
                     Tile::Empty => {}
@@ -40,11 +40,12 @@ impl Level {
                 }
             }
         }
-        for c in self.crystals.iter().filter(|c| c.ready()) {
+        for c in self.refills().iter().filter(|c| c.ready()) {
             let a = c.area;
+            let (q, side) = (a.w as f32 / 4.0, a.w as f32 / 2.0);
             p.rect(
-                at(a.x as f32 + 2.0, a.y as f32 + 2.0),
-                [4.0 * scale, 4.0 * scale],
+                at(a.x as f32 + q, a.y as f32 + q),
+                [side * scale, side * scale],
                 Color::rgb8(253, 196, 67),
             );
         }

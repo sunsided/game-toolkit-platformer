@@ -7,7 +7,16 @@
 //! the [`Intent`] (your own buttons arrive in [`Intent::custom`]), read and change the
 //! terrain (your own type through [`find_mut`](trait.Terrain.html#method.find_mut): break a
 //! block, flip a switch, use up a pickup; the movement sees the change at once), and report
-//! [`Event::Custom`]s.
+//! [`Event::Custom`]s (with up to four numbers of data: a knockback, a hit target).
+//!
+//! Name your modes and events with a [`CustomId`](super::CustomId) after your crate
+//! (`CustomId::new("my_crate::lunge")`): abilities from different crates then never have
+//! to agree on numbers. Custom buttons ([`Intent::custom`]) belong to the game, which binds
+//! them to keys: an ability meant for others takes its button's bit as a parameter.
+//!
+//! To replace a built-in move, rule it out and do your own in its place. To react to
+//! collisions, read [`Player::contacts`] in [`Ability::after`]. In a [`crate::Party`],
+//! [`Step::others`] holds the other characters' bodies.
 //!
 //! To rule out single built-in moves for a step (no dash while attacking, no wall grab
 //! while carrying, slow walking while pushing), clear them in [`Step::moves`] in
@@ -24,14 +33,14 @@
 //! and derive `Clone`.
 //!
 //! ```
-//! use game_toolkit_platformer::sim::{Ability, Event, Intent, Mode, Preset, Step, World};
+//! use game_toolkit_platformer::sim::{Ability, CustomId, Event, Intent, Mode, Preset, Spot, Step, World};
 //!
 //! /// Custom button 0 lunges forward on the ground.
 //! #[derive(Clone, Debug)]
 //! struct Lunge;
 //!
-//! /// The lunge's mode and event id.
-//! const LUNGE: u32 = 1;
+//! /// The lunge's mode and event id, named after the crate so no other ability's collides.
+//! const LUNGE: CustomId = CustomId::new("my_game::lunge");
 //!
 //! impl Ability for Lunge {
 //!     fn before(&mut self, s: &mut Step<'_>) {
@@ -41,7 +50,7 @@
 //!                 p.mode = Mode::Custom { id: LUNGE, t: 0.0 };
 //!                 p.vx = 240.0 * p.facing as f32;
 //!                 p.vy = 0.0;
-//!                 s.events.push(Event::Custom(LUNGE));
+//!                 s.events.push(Event::custom(LUNGE).with([p.vx, 0.0, 0.0, 0.0]));
 //!             }
 //!             Mode::Custom { id: LUNGE, t } if t >= 0.15 => p.mode = Mode::Normal,
 //!             _ => {}
@@ -51,16 +60,17 @@
 //!     }
 //! }
 //!
-//! let mut world = World::new(Preset::Hybrid.tuning(), (20, 88));
+//! let mut world = World::new(Preset::Hybrid.tuning(), Spot::TopLeft(20, 88));
 //! world.abilities.push(Box::new(Lunge));
 //! let mut floor = |r: game_toolkit_platformer::sim::Rect| r.bottom() > 100;
 //! world.step(&mut floor, &Intent { custom_pressed: 1, ..Intent::default() });
-//! assert!(world.events.contains(&Event::Custom(1)));
+//! assert!(world.events.iter().any(|e| e.custom_data(LUNGE).is_some()));
 //! ```
 
+use std::any::Any;
 use std::fmt::Debug;
 
-use super::{Event, Intent, Moves, Player, Terrain, Tuning};
+use super::{Event, Intent, Moves, Player, Rect, Terrain, Tuning};
 
 /// What an [`Ability`] gets to work with in one step.
 pub struct Step<'a> {
@@ -78,6 +88,10 @@ pub struct Step<'a> {
     pub moves: &'a mut Moves,
     /// This step's events so far; push yours ([`Event::Custom`]).
     pub events: &'a mut Vec<Event>,
+    /// The other characters' bodies on the same terrain (a [`crate::Party`]), as the step
+    /// started for those yet to move and as they ended up for those already moved; empty
+    /// for a character on its own.
+    pub others: &'a [Rect],
     /// The step's length in seconds ([`super::DT`]).
     pub dt: f32,
 }
@@ -89,20 +103,34 @@ pub trait Ability: AbilityClone + Debug {
     /// moves ([`Step::moves`]).
     fn before(&mut self, _s: &mut Step<'_>) {}
 
-    /// After the built-in moves, collision and landing: react to where the body ended up.
+    /// After the built-in moves, collision and landing: react to where the body ended up
+    /// and what it ran into ([`Player::contacts`]: a wall, a ceiling, the floor).
     fn after(&mut self, _s: &mut Step<'_>) {}
 }
 
-/// Cloning a boxed [`Ability`], so a world with abilities stays `Clone`. Implemented for
-/// every `Ability + Clone`; you don't implement it yourself.
+/// Cloning a boxed [`Ability`], so a world with abilities stays `Clone`, and reaching its
+/// concrete type ([`super::World::ability`]). Implemented for every `Ability + Clone`; you
+/// don't implement it yourself.
 pub trait AbilityClone {
     /// A boxed copy.
     fn clone_box(&self) -> Box<dyn Ability>;
+    /// Itself, to downcast.
+    fn as_any(&self) -> &dyn Any;
+    /// Itself, to downcast and change.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl<T: Ability + Clone + 'static> AbilityClone for T {
     fn clone_box(&self) -> Box<dyn Ability> {
         Box::new(self.clone())
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 

@@ -74,8 +74,8 @@ pub fn plain(level: &Level) -> Canvas {
         }
     }
     let t = TILE * K;
-    for ty in 0..level.h {
-        for tx in 0..level.w {
+    for ty in 0..level.height() {
+        for tx in 0..level.width() {
             let (x, y) = (tx * t, ty * t);
             match level.tile(tx, ty) {
                 Tile::Empty => {}
@@ -354,8 +354,8 @@ fn firs(c: &mut Canvas) {
 /// The level's tiles at `K` pixels per unit.
 fn tiles(c: &mut Canvas, level: &Level) {
     let t = TILE * K;
-    for ty in 0..level.h {
-        for tx in 0..level.w {
+    for ty in 0..level.height() {
+        for tx in 0..level.width() {
             let (x, y) = (tx * t, ty * t);
             match level.tile(tx, ty) {
                 Tile::Empty => {}
