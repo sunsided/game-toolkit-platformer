@@ -2,7 +2,8 @@
 
 All in `src/sim/`. Fixed step of 1/120 s, integer pixels with a sub-pixel remainder,
 moved one pixel at a time against 8 px tiles (`#` solid, `=` one-way platform,
-`*` dash crystal, `B` block). The hitbox is 6x12, blocks 12x12.
+`*` dash crystal, `B` block). The hitbox is 6x12 by default (`Tuning::size`, read into
+`Player::w`/`h`; the other numbers stay in units and don't scale with it), blocks 12x12.
 
 ## The demo level
 

@@ -204,7 +204,7 @@ impl Builder {
         };
         let spawn = match self.spawn {
             Spawn::At(x, y) => (x, y),
-            Spawn::Standing { x, floor } => Player::standing_at(x, floor),
+            Spawn::Standing { x, floor } => Player::standing_at(x, floor, self.tuning.size),
         };
         let mut world = World::new(self.tuning, spawn);
         world.respawn = self.respawn;
@@ -397,7 +397,7 @@ impl Platformer {
     /// the ground), centered on `x`: for [`Platformer::set_spawn`],
     /// [`Platformer::teleport`] and [`Platformer::respawn_at`] on a terrain of your own.
     pub fn standing_at(&self, x: i32, floor_y: i32) -> (i32, i32) {
-        Player::standing_at(x, floor_y)
+        Player::standing_at(x, floor_y, self.world.tuning.size)
     }
 
     /// Where [`Platformer::respawn`] (and falling out) puts the character from now on
@@ -417,10 +417,13 @@ impl Platformer {
     }
 
     /// Switch to `preset`'s feel (and, with game-toolkit, its controls, keeping your custom
-    /// buttons), keeping the character where it is.
+    /// buttons), keeping the character where it is and its size.
     pub fn set_preset(&mut self, preset: Preset) {
         self.preset = Some(preset);
-        self.world.tuning = preset.tuning();
+        self.world.tuning = Tuning {
+            size: self.world.tuning.size,
+            ..preset.tuning()
+        };
         #[cfg(feature = "toolkit")]
         {
             // The game's own buttons stay bound.
@@ -753,6 +756,30 @@ mod tests {
         let hero = Platformer::on(&level, Preset::Hybrid);
         let (x, y) = level.spawn_point(crate::sim::player::W, crate::sim::player::H);
         assert_eq!((hero.hitbox().x, hero.hitbox().y), (x, y));
+    }
+
+    #[test]
+    fn the_hitbox_size_comes_from_the_tuning() {
+        let mut level = Level::demo();
+        let mut hero = Platformer::builder()
+            .tune(|t| t.size = (10, 20))
+            .spawn_on(&level)
+            .build()
+            .unwrap();
+        let r = hero.hitbox();
+        assert_eq!((r.w, r.h), (10, 20));
+        let (sx, sy) = level.spawn;
+        assert_eq!(r.bottom(), (sy + 1) * TILE, "stands on the spawn tile");
+        assert_eq!(r.x + r.w / 2, sx * TILE + TILE / 2, "centered on it");
+        for _ in 0..30 {
+            hero.advance(Intent::default(), &mut level, 1.0 / 60.0);
+        }
+        assert!(hero.world.player.grounded);
+        assert_eq!(hero.hitbox().bottom(), (sy + 1) * TILE);
+
+        hero.set_preset(Preset::Momentum);
+        hero.respawn();
+        assert_eq!(hero.hitbox().h, 20, "a preset is a feel, not a body");
     }
 
     #[test]

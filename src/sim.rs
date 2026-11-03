@@ -84,7 +84,7 @@ impl World {
 
     /// A character at `level`'s spawn tile.
     pub fn on(level: &Level, tuning: Tuning) -> Self {
-        Self::new(tuning, level.spawn_point(player::W, player::H))
+        Self::new(tuning, level.spawn_point(tuning.size.0, tuning.size.1))
     }
 
     /// Advance one step of [`DT`] with `intent` in `terrain`. [`World::events`] then holds

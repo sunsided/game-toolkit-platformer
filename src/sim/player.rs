@@ -22,9 +22,9 @@ mod super_dash;
 
 use super::{Event, Intent, JumpKind, Rect, Terrain, Tuning};
 
-/// Hitbox width in pixels.
+/// The default hitbox width in units ([`Tuning::size`] sets it per character).
 pub const W: i32 = 6;
-/// Hitbox height in pixels.
+/// The default hitbox height in units ([`Tuning::size`] sets it per character).
 pub const H: i32 = 12;
 
 /// The hero's hold on a block, decided by the world each step before the hero moves.
@@ -108,6 +108,10 @@ pub struct Player {
     pub x: i32,
     /// Top edge of the hitbox, grid pixels.
     pub y: i32,
+    /// Hitbox width in units, from [`Tuning::size`].
+    pub w: i32,
+    /// Hitbox height in units, from [`Tuning::size`].
+    pub h: i32,
     /// Sub-pixel horizontal position not yet moved.
     rem_x: f32,
     /// Sub-pixel vertical position not yet moved.
@@ -183,6 +187,8 @@ impl Player {
         Self {
             x,
             y,
+            w: t.size.0,
+            h: t.size.1,
             rem_x: 0.0,
             rem_y: 0.0,
             vx: 0.0,
@@ -219,10 +225,10 @@ impl Player {
         }
     }
 
-    /// The hitbox's top-left (units) for a body standing on `floor_y` (the top of the
-    /// ground), centered on `foot_x`: a spawn point on a terrain of your own.
-    pub fn standing_at(foot_x: i32, floor_y: i32) -> (i32, i32) {
-        (foot_x - (W + 1) / 2, floor_y - H)
+    /// The hitbox's top-left (units) for a body of `(w, h)` standing on `floor_y` (the top
+    /// of the ground), centered on `foot_x`: a spawn point on a terrain of your own.
+    pub fn standing_at(foot_x: i32, floor_y: i32, (w, h): (i32, i32)) -> (i32, i32) {
+        (foot_x - (w + 1) / 2, floor_y - h)
     }
 
     /// Set the speed from outside: a spring, a bounce pad, knockback. Whatever the body was
@@ -270,8 +276,8 @@ impl Player {
         Rect {
             x: self.x,
             y: self.y,
-            w: W,
-            h: H,
+            w: self.w,
+            h: self.h,
         }
     }
 

@@ -8,9 +8,6 @@
 use super::{Mode, Player};
 use crate::sim::{Event, Intent, Rect, Terrain, Tuning};
 
-/// Rows at the top of the hitbox that must still touch the wall to keep climbing up;
-/// above that the hero hops over.
-const HEAD: i32 = super::H / 2;
 /// Seconds after a hop before grabbing again, so the hop carries over the top.
 const REGRAB: f32 = 0.2;
 
@@ -64,8 +61,10 @@ impl Player {
     ) {
         let up = i.move_y < -0.5;
         let down = i.move_y > 0.5;
+        // The top half of the hitbox must still touch the wall to keep climbing up; above
+        // that the hero hops over.
         let head = Rect {
-            h: HEAD,
+            h: self.h / 2,
             ..self.rect().shifted(self.facing, 0)
         };
         if !i.grab || !self.wall(level, self.facing) {

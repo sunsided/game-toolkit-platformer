@@ -1478,3 +1478,34 @@ fn a_super_dash_charged_on_a_wall_launches_away_from_it() {
         "no super dash in the precise preset"
     );
 }
+
+#[test]
+fn a_bigger_body_collides_by_its_own_size() {
+    // A low passage: 2 tiles (16 units) of headroom from x = 6 tiles on.
+    let low = room(&[(12, 6, "##################")]);
+    let right = Intent {
+        move_x: 1.0,
+        ..Intent::default()
+    };
+    let mut small = world(low.clone());
+    run(&mut small, right, 240);
+    assert!(
+        small.player.x > 10 * TILE,
+        "6x12 fits under: {}",
+        small.player.x
+    );
+
+    let tall = Tuning {
+        size: (10, 20),
+        ..Tuning::default()
+    };
+    let mut big = Sim::new(low, tall);
+    assert_eq!(big.player.rect().bottom(), 15 * TILE, "stands on the floor");
+    run(&mut big, right, 240);
+    assert_eq!(
+        big.player.rect().right(),
+        6 * TILE,
+        "10x20 stops at the passage"
+    );
+    assert!(big.player.grounded);
+}

@@ -2,7 +2,8 @@
 //! implements it for its own level (a tilemap, a collision grid, anything); only
 //! [`Terrain::solid`] is required.
 //!
-//! Positions and sizes are in the controller's units: the body is 6x12, the tuning is made
+//! Positions and sizes are in the controller's units: the body is 6x12 unless
+//! [`super::Tuning::size`] says otherwise, the tuning is made
 //! for 8-unit tiles. If your tiles are 16 pixels, divide by two on the way in (or use
 //! [`super::Level`], which already speaks units).
 //!

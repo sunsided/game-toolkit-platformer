@@ -142,6 +142,11 @@ impl Preset {
 /// The movement feel. All speeds px/s, accelerations px/s², times seconds.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tuning {
+    /// The hitbox's width and height in units (default 6x12, [`super::player::W`] x
+    /// [`super::player::H`]). The other numbers stay in units and don't scale with it:
+    /// tuned for a 6x12 body on 8-unit tiles, a much bigger body may want a higher jump.
+    pub size: (i32, i32),
+
     /// Top running speed.
     pub run_speed: f32,
     /// A sprint button exists.
@@ -333,6 +338,8 @@ pub struct Tuning {
 impl Default for Tuning {
     fn default() -> Self {
         Self {
+            size: (super::player::W, super::player::H),
+
             run_speed: 90.0,
             sprint: true,
             sprint_speed: 140.0,
