@@ -61,5 +61,23 @@ pub const DIVE: [u16; 2] = [40, 41];
 pub const DIVE_LAND_A: u16 = 42;
 /// Rising from the dive impact.
 pub const DIVE_LAND_B: u16 = 43;
+/// Looking up, raising the head.
+pub const LOOK_UP_A: u16 = 44;
+/// Looking up, held.
+pub const LOOK_UP_B: u16 = 45;
+/// Looking down, lowering the head.
+pub const LOOK_DOWN_A: u16 = 46;
+/// Looking down, held.
+pub const LOOK_DOWN_B: u16 = 47;
+/// Idle fidget after standing still a while: glance back, stretch, settle.
+pub const FIDGET: [u16; 4] = [48, 49, 50, 51];
+/// Air jump with wings (Monarch Wings): spread, beat down, glide, fold.
+pub const WINGS: [u16; 4] = [52, 53, 54, 55];
+/// Pushing a block, a leaning walk cycle.
+pub const PUSH: [u16; 4] = [56, 57, 58, 59];
+/// Pulling a block, leaning back, walking backwards.
+pub const PULL: [u16; 4] = [60, 61, 62, 63];
+/// Holding a block without moving.
+pub const BOX_HOLD: u16 = 64;
 /// Number of sprites.
-pub const COUNT: u16 = 44;
+pub const COUNT: u16 = 65;

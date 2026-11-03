@@ -1,5 +1,5 @@
-//! [`Level`]: a grid of tiles (solid walls, one-way platforms), dash crystals and a
-//! spawn point.
+//! [`Level`]: a grid of tiles (solid walls, one-way platforms), dash crystals, block
+//! starts and a spawn point.
 
 use super::Rect;
 
@@ -10,37 +10,44 @@ pub const TILE: i32 = 8;
 /// jump up through it, down + jump drops through), `*` a dash crystal, `.` empty, `P` the
 /// spawn (the hero stands on the tile below it). 48x27 tiles, exactly one screen.
 ///
-/// A tower slab on the left (a 128 px drop: hard landing or roll), one-way steps up to it,
-/// a pit to respawn from, a low ceiling for corner corrections, a pillar to climb, a 48 px
-/// ledge on the right for rolls, and crystals to recharge the dash in the air.
+/// Laid out around the debug overlay's corners, the play happens in the middle:
+///
+/// - left: stairs of 3-tile (24 px) steps, each within a plain jump, up to a tower 96 px
+///   over the floor
+/// - middle: two chimneys for wall-jump bouncing, a narrow one (24 px inside) and a wide
+///   one (40 px), open below, lidded with one-way platforms (drops of 136 and 160 px:
+///   rolls, hard landings, dives)
+/// - right: a low ceiling for corner corrections, a step up to a ledge over the pit, a
+///   free pillar to climb, dash crystals between
+/// - blocks to push and pull: one on the floor between the chimneys, one on the ledge
 pub const DEMO: [&str; 27] = [
     "#..............................................#",
     "#..............................................#",
     "#..............................................#",
+    "#..........................*...................#",
     "#..............................................#",
-    "#...........................................*..#",
+    "#.......................=======................#",
+    "#.......................#.....#................#",
+    "#.......................#.....#....##..........#",
+    "#.............=====.....#.....#....##..........#",
+    "#.............#...#.....#.....#....##.......*..#",
+    "#.............#...#.....#.....#....##..........#",
+    "#.............#...#.....#.....#....##..........#",
+    "#.............#...#.....#.....#....##..........#",
+    "#####.........#...#..*..#.....#....##..........#",
+    "#.............#...#.....#.....#...........B....#",
+    "#.............#...#.....#.....#.........########",
+    "#....====.....#...#.....#.....#................#",
+    "#.............#...#.....#.....#................#",
+    "#.............#...#.....#.....#........===.....#",
+    "#####.........#...#.....#.....#................#",
+    "#.............#...#.....#.....#................#",
+    "#.............#...#..............######........#",
+    "#....====......................................#",
     "#..............................................#",
-    "#...................*..........................#",
-    "#..............................................#",
-    "#.........................................##...#",
-    "#######...................................##...#",
-    "#.........................................##...#",
-    "#.............................#########...##...#",
-    "#.........................................##...#",
-    "#...........====..........................##...#",
-    "#....................####.................##...#",
-    "#.........................................##...#",
-    "#..............................................#",
-    "#.............====.............................#",
-    "#.......................................########",
-    "#..............................................#",
-    "#.........................#####..#####.........#",
-    "#........=====.................................#",
-    "#....................*.........................#",
-    "#..............................................#",
-    "#..P...........................................#",
-    "####################....########################",
-    "####################....########################",
+    "#..........P.........B.........................#",
+    "##########################################...###",
+    "##########################################...###",
 ];
 
 /// What fills one tile.
@@ -68,6 +75,11 @@ pub struct Level {
     pub spawn: (i32, i32),
     /// Tiles holding a dash crystal.
     pub crystals: Vec<(i32, i32)>,
+    /// Tiles where a pushable block starts (its bottom on that tile's bottom).
+    pub block_spawns: Vec<(i32, i32)>,
+    /// Moving solids (the blocks' boxes), kept current by the world each step. They
+    /// collide like solid tiles.
+    pub blocks: Vec<Rect>,
 }
 
 impl Level {
@@ -79,6 +91,7 @@ impl Level {
         let mut tiles = Vec::with_capacity((w * h) as usize);
         let mut spawn = (1, 1);
         let mut crystals = Vec::new();
+        let mut block_spawns = Vec::new();
         for (y, row) in rows.iter().enumerate() {
             assert_eq!(
                 row.len() as i32,
@@ -91,6 +104,7 @@ impl Level {
                 match c {
                     b'P' => spawn = at,
                     b'*' => crystals.push(at),
+                    b'B' => block_spawns.push(at),
                     _ => {}
                 }
                 tiles.push(match c {
@@ -106,6 +120,8 @@ impl Level {
             tiles,
             spawn,
             crystals,
+            block_spawns,
+            blocks: Vec::new(),
         }
     }
 
@@ -128,14 +144,29 @@ impl Level {
         self.tile(tx, ty) == Tile::Solid
     }
 
-    /// Whether `r` overlaps any solid tile (platforms don't count).
+    /// Whether `r` overlaps any solid tile or block (platforms don't count).
     pub fn overlaps(&self, r: Rect) -> bool {
+        self.overlaps_except(r, None)
+    }
+
+    /// Whether `r` overlaps any solid tile or block other than block `skip`.
+    pub fn overlaps_except(&self, r: Rect, skip: Option<usize>) -> bool {
         let (tx0, ty0) = (r.x.div_euclid(TILE), r.y.div_euclid(TILE));
         let (tx1, ty1) = (
             (r.right() - 1).div_euclid(TILE),
             (r.bottom() - 1).div_euclid(TILE),
         );
         (ty0..=ty1).any(|ty| (tx0..=tx1).any(|tx| self.solid(tx, ty)))
+            || self
+                .blocks
+                .iter()
+                .enumerate()
+                .any(|(i, b)| Some(i) != skip && b.intersects(r))
+    }
+
+    /// The block `r` overlaps, if any.
+    pub fn block_at(&self, r: Rect) -> Option<usize> {
+        self.blocks.iter().position(|b| b.intersects(r))
     }
 
     /// Whether `r` stands exactly on top of a one-way platform.
@@ -166,6 +197,8 @@ mod tests {
         assert_eq!(l.tile(sx, sy), Tile::Empty);
         assert!(l.solid(sx, sy + 1));
         assert_eq!(l.crystals.len(), 3);
+        assert_eq!(l.spawn, (11, 24));
+        assert_eq!(l.block_spawns, [(42, 14), (21, 24)]);
     }
 
     #[test]

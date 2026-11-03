@@ -66,6 +66,26 @@ pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
             r.put(cx + 3, cy, pal::STEEL);
         }
     }
+    for b in &s.world.blocks {
+        let q = b.rect();
+        r.fill_rect(q.x, q.y, q.w, q.h, pal::WOOD);
+        r.rect_outline(q.x, q.y, q.w, q.h, pal::WOOD_DK);
+        r.line(
+            q.x + 1,
+            q.y + 1,
+            q.right() - 2,
+            q.bottom() - 2,
+            pal::WOOD_DK,
+        );
+        r.line(
+            q.right() - 2,
+            q.y + 1,
+            q.x + 1,
+            q.bottom() - 2,
+            pal::WOOD_DK,
+        );
+        r.fill_rect(q.x + 1, q.y + 1, q.w - 2, 1, pal::WOOD_LT);
+    }
     for f in &s.fx {
         effect(r, f);
     }
@@ -77,9 +97,7 @@ pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
         None
     };
     hero::draw(r, x, y, s.animator.sprite(), p.facing, tint, 1.0);
-    if s.debug {
-        debug::draw(r, s);
-    }
+    debug::draw(r, s);
 }
 
 /// A filled diamond of radius `rad`.

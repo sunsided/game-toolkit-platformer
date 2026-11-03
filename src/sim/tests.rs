@@ -804,3 +804,279 @@ fn presets_switch_abilities_off() {
         "sideways only: {ev:?}"
     );
 }
+
+/// On the demo level, start standing at `x` with feet at `feet`, press jump (held) while
+/// holding `move_x` for `steps` steps, then let go; whether the hero ever stands with
+/// feet at `target`.
+fn reaches(x: i32, feet: i32, move_x: f32, steps: usize, target: i32) -> bool {
+    let mut w = world(Level::demo());
+    w.player.x = x;
+    w.player.y = feet - player::H;
+    w.player.peak_y = w.player.y;
+    run(&mut w, Intent::default(), 3);
+    assert!(w.player.grounded, "start on the ground at {x},{feet}");
+    let go = Intent {
+        move_x,
+        jump_held: true,
+        ..Intent::default()
+    };
+    w.step(&Intent {
+        jump_pressed: true,
+        ..go
+    });
+    for k in 0..240 {
+        let i = if k < steps { go } else { Intent::default() };
+        w.step(&i);
+        if w.player.grounded && w.player.y + player::H == target {
+            return true;
+        }
+    }
+    false
+}
+
+#[test]
+fn every_demo_stair_is_within_a_plain_jump() {
+    let (floor, s1, s2, s3, tower) = (25 * TILE, 22 * TILE, 19 * TILE, 16 * TILE, 13 * TILE);
+    assert!(reaches(10 * TILE, floor, -1.0, 25, s1), "floor -> step 1");
+    assert!(reaches(7 * TILE, s1, -1.0, 30, s2), "step 1 -> step 2");
+    assert!(reaches(2 * TILE, s2, 1.0, 30, s3), "step 2 -> step 3");
+    assert!(reaches(7 * TILE, s3, -1.0, 30, tower), "step 3 -> tower");
+}
+
+#[test]
+fn a_tapped_jump_does_not_reach_the_first_step() {
+    // The steps are tuned to need the held jump, not a tap.
+    let mut w = world(Level::demo());
+    w.player.x = 10 * TILE;
+    run(&mut w, Intent::default(), 3);
+    let left = Intent {
+        move_x: -1.0,
+        ..Intent::default()
+    };
+    w.step(&Intent {
+        jump_pressed: true,
+        jump_held: true,
+        ..left
+    });
+    let mut highest = w.player.y;
+    for _ in 0..120 {
+        w.step(&left);
+        highest = highest.min(w.player.y);
+    }
+    assert!(
+        25 * TILE - (highest + player::H) < 24,
+        "a tap rises less than a step"
+    );
+}
+
+#[test]
+fn holding_up_or_down_standing_still_looks() {
+    let mut w = world(room(&[]));
+    run(
+        &mut w,
+        Intent {
+            move_y: -1.0,
+            ..Intent::default()
+        },
+        30,
+    );
+    assert_eq!(w.player.look, -1);
+    assert!(w.player.look_time > 0.2);
+    run(
+        &mut w,
+        Intent {
+            move_y: 1.0,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert_eq!((w.player.look, w.player.look_time), (1, 0.0));
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            move_y: 1.0,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert_eq!(w.player.look, 0, "not while moving");
+}
+
+/// A room with a block on the floor at tile x 6, the hero standing left of it.
+fn with_block() -> World {
+    let mut w = world(room(&[(14, 6, "B")]));
+    w.player.x = 6 * TILE - 2 - player::W - 4;
+    run(&mut w, Intent::default(), 3);
+    w
+}
+
+#[test]
+fn walking_into_a_block_pushes_it_slowly() {
+    let mut w = with_block();
+    let start = w.blocks[0].x;
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        120,
+    );
+    let moved = w.blocks[0].x - start;
+    assert!(moved > 20, "pushed {moved}");
+    assert_eq!(w.player.shove, Shove::Push { side: 1 });
+    assert!(w.player.vx <= Tuning::default().push_speed + 0.5);
+    assert!(moved < 60, "slower than running: {moved}");
+}
+
+#[test]
+fn grabbing_a_block_holds_it_and_walking_away_pulls_it() {
+    let mut w = with_block();
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        20,
+    );
+    let start = w.blocks[0].x;
+    let grab = Intent {
+        grab: true,
+        ..Intent::default()
+    };
+    run(&mut w, grab, 5);
+    assert_eq!(w.player.shove, Shove::Hold { side: 1 });
+    assert_eq!(
+        w.player.mode,
+        Mode::Normal,
+        "grab at a block doesn't climb it"
+    );
+    run(
+        &mut w,
+        Intent {
+            move_x: -1.0,
+            ..grab
+        },
+        120,
+    );
+    assert_eq!(w.player.shove, Shove::Pull { side: 1 });
+    assert_eq!(w.player.facing, 1, "still facing the block");
+    assert!(
+        w.blocks[0].x < start - 20,
+        "pulled from {start} to {}",
+        w.blocks[0].x
+    );
+    assert!(w.player.wall(&w.level, 1), "the block stays at the hand");
+}
+
+#[test]
+fn blocks_fall_off_ledges_and_can_be_stood_on() {
+    // A block on a shelf edge; push it off, then jump onto it.
+    let mut w = world(room(&[(10, 1, "######"), (9, 5, "B")]));
+    w.player.x = 2 * TILE;
+    w.player.y = 10 * TILE - player::H;
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        200,
+    );
+    assert!(w.blocks[0].grounded);
+    assert_eq!(w.blocks[0].y, 15 * TILE - block::SIZE, "on the floor");
+    let mut w = world(room(&[(14, 4, "B")]));
+    jump(&mut w, 30, 0);
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        18,
+    );
+    run(&mut w, Intent::default(), 90);
+    assert_eq!(
+        w.player.y + player::H,
+        w.blocks[0].y,
+        "standing on the block"
+    );
+}
+
+/// Wall-jump repeatedly holding toward a single wall at tile x 10 for `steps` steps;
+/// the height gained in pixels.
+fn scale_wall(t: Tuning, steps: usize) -> i32 {
+    let mut w = at_wall(1..15, 15 * TILE - player::H, t);
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        5,
+    );
+    assert!(w.player.grounded);
+    let start = w.player.y;
+    let mut top = start;
+    for _ in 0..steps {
+        // Press jump whenever the wall is within reach and not still rising fast.
+        let near = (1..=2).any(|d| w.level.overlaps(w.player.rect().shifted(d, 0)));
+        let press = near && w.player.vy > -30.0;
+        w.step(&Intent {
+            move_x: 1.0,
+            jump_pressed: press,
+            jump_held: true,
+            ..Intent::default()
+        });
+        top = top.min(w.player.y);
+    }
+    start - top
+}
+
+#[test]
+fn wall_jumps_toward_the_wall_scale_it() {
+    for p in [Preset::Hybrid, Preset::HollowKnight, Preset::MeatBoy] {
+        let gained = scale_wall(p.tuning(), 300);
+        assert!(gained > 60, "{}: gained only {gained} px", p.name());
+    }
+}
+
+#[test]
+fn the_stick_aims_wall_jumps() {
+    /// Velocity right after a wall jump off a wall on the right, with this stick.
+    fn kick(move_x: f32, move_y: f32) -> (f32, f32) {
+        let mut w = at_wall(1..15, 6 * TILE, Tuning::default());
+        run(
+            &mut w,
+            Intent {
+                move_x: 1.0,
+                ..Intent::default()
+            },
+            10,
+        );
+        let ev = run(
+            &mut w,
+            Intent {
+                move_x,
+                move_y,
+                jump_pressed: true,
+                jump_held: true,
+                ..Intent::default()
+            },
+            1,
+        );
+        assert_eq!(jumps(&ev), [(JumpKind::Wall, false)]);
+        (w.player.vx, w.player.vy)
+    }
+    let (toward, neutral, away) = (kick(1.0, 0.0).0, kick(0.0, 0.0).0, kick(-1.0, 0.0).0);
+    assert!(
+        toward > neutral && neutral > away,
+        "{toward} {neutral} {away}"
+    );
+    assert!(
+        kick(0.0, -1.0).1 < kick(0.0, 1.0).1,
+        "up jumps higher than down"
+    );
+}

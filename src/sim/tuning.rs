@@ -73,7 +73,10 @@ impl Preset {
                 grab: false,
                 wall_slide_speed: 60.0,
                 wall_jump_lock: 0.2,
+                wall_climb_speed: 80.0,
+                wall_climb_lock: 0.08,
                 roll_drop: never,
+                wings: true,
                 ..base
             },
             Preset::MeatBoy => Tuning {
@@ -97,6 +100,8 @@ impl Preset {
                 wall_jump_speed: 170.0,
                 wall_jump_lock: 0.05,
                 wall_stick_time: 0.12,
+                wall_climb_speed: 90.0,
+                wall_climb_lock: 0.05,
                 roll_drop: never,
                 hard_land_drop: never,
                 ..base
@@ -213,12 +218,31 @@ pub struct Tuning {
     pub wall_jump_lock: f32,
     /// A wall this many pixels away still counts for a wall jump.
     pub wall_jump_reach: i32,
+    /// Horizontal speed of a wall jump made holding toward the wall: small, so the hero
+    /// arcs back onto the same wall (Hollow Knight, Super Meat Boy). Equal to
+    /// [`Tuning::wall_jump_speed`] to turn it off.
+    pub wall_climb_speed: f32,
+    /// Stick lock of such a wall jump. Between toward and away, speed and lock blend.
+    pub wall_climb_lock: f32,
+    /// How much stick up or down tilts a wall jump's upward speed (0.15: +-15 %).
+    pub wall_jump_aim: f32,
     /// Sliding down a wall, pressing away keeps the hero stuck to it this long, so
     /// "away + jump" becomes a wall jump instead of a fall.
     pub wall_stick_time: f32,
 
     /// Diving is possible at all.
     pub dive: bool,
+
+    /// Blocks can be pushed (walk into them) and pulled (grab, walk away).
+    pub push: bool,
+    /// Walking speed pushing a block.
+    pub push_speed: f32,
+    /// Walking speed pulling a block.
+    pub pull_speed: f32,
+
+    /// Presentation: air jumps flap wings (Hollow Knight's Monarch Wings) instead of a
+    /// flip. Read by the hero's animation driver, not by the movement.
+    pub wings: bool,
 
     /// Seconds hanging in the air before a dive plunges.
     pub dive_windup: f32,
@@ -300,9 +324,18 @@ impl Default for Tuning {
             wall_jump_speed: 130.0,
             wall_jump_lock: 0.16,
             wall_jump_reach: 2,
+            wall_climb_speed: 70.0,
+            wall_climb_lock: 0.07,
+            wall_jump_aim: 0.15,
             wall_stick_time: 0.1,
 
             dive: true,
+
+            push: true,
+            push_speed: 40.0,
+            pull_speed: 30.0,
+
+            wings: false,
 
             dive_windup: 0.08,
             dive_speed: 320.0,

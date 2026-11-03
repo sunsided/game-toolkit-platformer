@@ -26,6 +26,28 @@ pub const W: i32 = 6;
 /// Hitbox height in pixels.
 pub const H: i32 = 12;
 
+/// The hero's hold on a block, decided by the world each step before the hero moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Shove {
+    /// No block involved.
+    None,
+    /// Grabbing a block on `side` without moving.
+    Hold {
+        /// Side of the block, -1 or 1.
+        side: i32,
+    },
+    /// Walking into a block on `side`, pushing it.
+    Push {
+        /// Side of the block.
+        side: i32,
+    },
+    /// Grabbing a block on `side` and walking away, pulling it.
+    Pull {
+        /// Side of the block.
+        side: i32,
+    },
+}
+
 /// What the body is busy with, beyond plain running and jumping.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mode {
@@ -119,6 +141,12 @@ pub struct Player {
     pub slipping: bool,
     /// Seconds before a wall can be grabbed again after hopping over its top.
     pub regrab: f32,
+    /// Looking up (-1) or down (1) while standing still, or 0.
+    pub look: i32,
+    /// Seconds the current look has been held.
+    pub look_time: f32,
+    /// The hold on a block this step (set by the world).
+    pub shove: Shove,
     /// Highest (smallest) `y` of this airtime, for the drop height on landing.
     pub peak_y: i32,
 }
@@ -155,6 +183,9 @@ impl Player {
             wall_stick: 0.0,
             slipping: false,
             regrab: 0.0,
+            look: 0,
+            look_time: 0.0,
+            shove: Shove::None,
             peak_y: y,
         }
     }
@@ -201,10 +232,29 @@ impl Player {
         }
         self.move_y(level, self.vy * dt, t.corner_correction, ev);
         self.land(level, move_x, landing_vy, jumped, t, ev);
+        self.look(i, move_x, dt);
 
         if self.y > level.floor_y() + 4 * TILE {
             *self = Self::spawn(level, t);
             ev.push(Event::Respawned);
+        }
+    }
+
+    /// Holding up or down while standing still looks that way.
+    fn look(&mut self, i: &Intent, move_x: f32, dt: f32) {
+        let still =
+            self.grounded && self.mode == Mode::Normal && move_x == 0.0 && self.vx.abs() < 1.0;
+        let dir = match () {
+            _ if !still => 0,
+            _ if i.move_y < -0.5 => -1,
+            _ if i.move_y > 0.5 => 1,
+            _ => 0,
+        };
+        if dir != self.look {
+            self.look = dir;
+            self.look_time = 0.0;
+        } else if dir != 0 {
+            self.look_time += dt;
         }
     }
 
@@ -308,15 +358,24 @@ impl Player {
             }
             Mode::Dash { .. } | Mode::Dive { .. } | Mode::Climb => {}
             Mode::Normal => {
-                if move_x != 0.0 {
-                    self.facing = move_x.signum() as i32;
+                let top = match self.shove {
+                    Shove::None => t.run_speed,
+                    Shove::Push { .. } => t.push_speed,
+                    Shove::Pull { .. } => t.pull_speed,
+                    Shove::Hold { .. } => 0.0,
+                };
+                match self.shove {
+                    // Facing stays on the block while holding it.
+                    Shove::Pull { side } | Shove::Hold { side } => self.facing = side,
+                    _ if move_x != 0.0 => self.facing = move_x.signum() as i32,
+                    _ => {}
                 }
-                let target = move_x * t.run_speed;
+                let target = move_x * top;
                 let accel = if move_x == 0.0 {
                     t.run_decel
                 } else if self.vx * move_x < 0.0 {
                     t.turn_accel
-                } else if self.vx.abs() > t.run_speed {
+                } else if self.vx.abs() > top {
                     t.overspeed_decel
                 } else {
                     t.run_accel

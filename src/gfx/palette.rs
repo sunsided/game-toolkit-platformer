@@ -40,6 +40,12 @@ pub const STONE_DK: Rgb = Rgb::hex(0x2a2a3a);
 pub const STONE: Rgb = Rgb::hex(0x4a4a64);
 /// Light stone: the lit top edge of tiles.
 pub const STONE_LT: Rgb = Rgb::hex(0x8a8aa8);
+/// Wood: blocks.
+pub const WOOD: Rgb = Rgb::hex(0x9a6a3a);
+/// Dark wood: block outlines and braces.
+pub const WOOD_DK: Rgb = Rgb::hex(0x5a3a1e);
+/// Light wood: the lit top edge of blocks.
+pub const WOOD_LT: Rgb = Rgb::hex(0xc8935a);
 /// Mid blue-grey: panel borders, debug trail.
 pub const STEEL: Rgb = Rgb::hex(0x4a5591);
 /// Light blue-grey: secondary text.

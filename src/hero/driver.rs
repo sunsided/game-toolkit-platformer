@@ -1,7 +1,7 @@
 //! [`HeroDriver`]: the simulation's facts and events as the hero graph's parameters.
 
 use crate::anim::{Driver, ParamId, Params};
-use crate::sim::{Event, JumpKind, Mode, World};
+use crate::sim::{Event, JumpKind, Mode, Shove, World};
 
 /// Parameter ids of the hero graph, looked up once.
 #[derive(Clone, Debug)]
@@ -22,12 +22,22 @@ pub struct HeroDriver {
     wall_slide: ParamId,
     /// `hard_landing`
     hard_landing: ParamId,
+    /// `wings`
+    wings: ParamId,
+    /// `pushing`
+    pushing: ParamId,
+    /// `pulling`
+    pulling: ParamId,
+    /// `holding`
+    holding: ParamId,
     /// `speed`
     speed: ParamId,
     /// `vy`
     vy: ParamId,
     /// `dash_y`
     dash_y: ParamId,
+    /// `look`
+    look: ParamId,
     /// `jump`
     jump: ParamId,
     /// `double`
@@ -75,9 +85,14 @@ impl HeroDriver {
             slipping: id("slipping"),
             wall_slide: id("wall_slide"),
             hard_landing: id("hard_landing"),
+            wings: id("wings"),
+            pushing: id("pushing"),
+            pulling: id("pulling"),
+            holding: id("holding"),
             speed: id("speed"),
             vy: id("vy"),
             dash_y: id("dash_y"),
+            look: id("look"),
             jump: id("jump"),
             double: id("double"),
             wall_jump: id("wall_jump"),
@@ -111,6 +126,13 @@ impl Driver<World> for HeroDriver {
         p.set_bool(self.slipping, pl.slipping);
         p.set_bool(self.wall_slide, pl.wall_slide != 0);
         p.set_bool(self.hard_landing, matches!(pl.mode, Mode::HardLand { .. }));
+        p.set_bool(self.slipping, pl.slipping);
+        p.set_bool(self.wings, w.tuning.wings);
+        p.set_bool(self.pushing, matches!(pl.shove, Shove::Push { .. }));
+        p.set_bool(self.pulling, matches!(pl.shove, Shove::Pull { .. }));
+        p.set_bool(self.holding, matches!(pl.shove, Shove::Hold { .. }));
+        // Signed seconds held: negative looking up, positive looking down.
+        p.set_float(self.look, pl.look as f32 * pl.look_time);
         p.set_float(self.speed, pl.vx.abs());
         p.set_float(self.vy, pl.vy);
         if let Mode::Dash { dy, .. } = pl.mode {

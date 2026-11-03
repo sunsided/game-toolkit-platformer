@@ -33,10 +33,13 @@ All in `src/anim/`; the hero's binding in `src/hero/`.
 Pattern: events enter states through triggers; continuous facts keep or leave them
 through bools and floats.
 
-- Ground: `idle`, `run` (rate by speed, `step` markers), `skid`, `land` (once, into idle
-  or run), `hard_land` (locked), `roll`.
-- Air: `takeoff` → `rise` → `apex` → `fall`; one-shots `double` (locked flip), `wall_jump`,
-  `hop`, `drop`.
+- Standing: `idle` (ping-pong breathing), `idle_fidget` (after 5 s still, once, back to
+  idle), `look_up` / `look_down` (after holding up or down for 0.15 s).
+- Ground: `run` (rate by speed, `step` markers), `skid`, `land` (once, into idle or run),
+  `hard_land` (locked), `roll`.
+- Blocks: `push`, `pull` (rate by speed, `step` markers), `box_hold`.
+- Air: `takeoff` → `rise` → `apex` → `fall`; one-shots `double` (locked flip) or `wings`
+  (chosen by the `wings` bool: the same trigger, two looks), `wall_jump`, `hop`, `drop`.
 - Dashes: `dash_side`, `dash_up`, `dash_down`, chosen by `dash_y`.
 - Walls: `climb` (rate by vertical speed) ↔ `grip_slip`, `wall_slide`.
 - Dive: `dive_windup` → `dive` → `dive_land` (locked).

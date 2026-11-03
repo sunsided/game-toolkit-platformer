@@ -9,6 +9,11 @@
   named spec compiled and validated, locks, priorities, driver trait
 - [x] Hero graph and driver; placeholder poses; debug overlay; slow motion and stepping
 - [x] Headless filmstrips per move
+- [x] Demo level around the overlay: reachable stairs, chimneys for wall bouncing
+- [x] Hollow Knight controller mapping; look up/down; idle fidget; Monarch-style wings
+- [x] Blocks: push, pull, hold, fall, stand on
+- [x] Stick-aimed wall jumps; scaling a single wall
+- [x] Compact overlay (F1: compact, full, off)
 
 ## Next
 
@@ -23,5 +28,7 @@
 - [ ] Lab: record intents, rewind and replay (determinism already holds)
 - [ ] More moves: ledge grab, crouch and slide, super/hyper dashes, wall-jump coyote time,
   swimming and underwater diving
-- [ ] Camera with look-ahead and larger levels
+- [ ] Camera with look-ahead and larger levels (looking up/down pans it, as in Hollow
+  Knight)
+- [ ] Carrying blocks, throwing them
 - [ ] WASM build

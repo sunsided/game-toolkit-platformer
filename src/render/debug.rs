@@ -1,180 +1,184 @@
-//! The debug overlay: what the controller and the body are doing, step by step.
+//! The debug overlay: what the controller and the body are doing, step by step, kept to
+//! the screen's corners. F1 cycles compact, full and off.
 //!
-//! Left: the animator (state, frame, lock, recent states) and the body (mode, speeds,
-//! buffers, resources). Right: every parameter, pending triggers lit. Bottom: the event
-//! log. Plus the hitbox and the clock.
+//! - Top left: the animator (state, frame, lock; in full: recent states) and the body
+//!   (mode, speeds, resources, buffers and timers as bars).
+//! - Top right: parameters. Compact lists only the active ones (bools on, floats off zero,
+//!   pending triggers); full lists all.
+//! - Bottom left: the event log. Bottom right: preset and clock.
 
 use crate::anim::ParamKind;
 use crate::gfx::font::{self, Font};
 use crate::gfx::{H, Raster, Rgb, W, palette as pal};
-use crate::session::Session;
+use crate::session::{Overlay, Session};
+use crate::sim::{Mode, player};
 
 /// Line pitch of the tiny font.
 const LINE: i32 = 6;
+/// Opacity of the panels behind the text.
+const PANEL: f32 = 0.6;
+/// Log lines shown in compact mode.
+const COMPACT_LOG: usize = 3;
 
-/// Draw the overlay.
+/// One line of overlay text.
+type Line = (String, Rgb);
+
+/// Draw the overlay in the session's mode.
 pub fn draw(r: &mut dyn Raster, s: &Session) {
-    let p = &s.world.player;
-    let a = &s.animator;
-    let t = &s.world.tuning;
-    r.rect_outline(
-        p.x - 1,
-        p.y - 1,
-        crate::sim::player::W + 2,
-        crate::sim::player::H + 2,
-        pal::STEEL,
-    );
-
-    // Dim backing panels, so the text reads over tiles.
-    r.blend_rect(0, 0, 124, 2 + 10 * LINE, pal::BLACK, 0.55);
-    let params_w = a
-        .params
-        .iter()
-        .map(|(_, name, _, _)| Font::Tiny.measure(name, 1) + 24)
-        .max()
-        .unwrap_or(0);
-    let params_h = 3 + LINE * a.params.iter().count() as i32;
-    r.blend_rect(
-        W - params_w - 4,
-        0,
-        params_w + 4,
-        params_h,
-        pal::BLACK,
-        0.55,
-    );
-    let log_h = 3 + LINE * s.log.len() as i32;
-    r.blend_rect(0, H - log_h - 1, 200, log_h + 1, pal::BLACK, 0.55);
-
-    let mut y = 2;
-    let mut line = |r: &mut dyn Raster, text: &str, c: Rgb| {
-        font::draw(r, Font::Tiny, 3, y, text, c);
-        y += LINE;
+    let full = match s.overlay {
+        Overlay::Off => return,
+        Overlay::Compact => false,
+        Overlay::Full => true,
     };
-    let lock = if a.locked() { " LOCK" } else { "" };
-    line(
-        r,
-        &format!(
-            "{} F{} {:.2}S{lock}",
-            a.state_name(),
-            a.frame(),
-            a.time_in_state()
-        ),
-        if a.locked() { pal::RED } else { pal::YELLOW },
-    );
-    let hist: Vec<String> = a
-        .history()
-        .map(|(id, secs)| format!("{}{:.0}", a.graph().state(id).name, secs * 1000.0))
-        .collect();
-    line(r, &hist.join(" "), pal::STEEL_LT);
-    line(r, &format!("{:?}", p.mode).to_uppercase(), pal::PALE);
-    line(
-        r,
-        &format!(
-            "VX {:+.0} VY {:+.0} {}",
-            p.vx,
-            p.vy,
-            if p.grounded { "GROUND" } else { "AIR" }
-        ),
-        pal::PALE,
-    );
-    meter(r, 3, y, "JUMP BUF", p.buffer / t.jump_buffer, pal::YELLOW);
-    meter(
-        r,
-        3,
-        y + LINE,
-        "COYOTE",
-        p.coyote / t.coyote_time,
-        pal::GREEN,
-    );
-    meter(
-        r,
-        3,
-        y + 2 * LINE,
-        "DASH BUF",
-        p.dash_buffer / t.dash_buffer,
-        pal::YELLOW,
-    );
-    meter(
-        r,
-        3,
-        y + 3 * LINE,
-        "STAMINA",
-        p.stamina / t.stamina,
-        pal::GREEN,
-    );
-    meter(
-        r,
-        3,
-        y + 4 * LINE,
-        "VAR JUMP",
-        p.var_jump / t.var_jump_time,
-        pal::CYAN,
-    );
-    font::draw(
-        r,
-        Font::Tiny,
-        3,
-        y + 5 * LINE,
-        &format!(
-            "DASH {} AIR {} WALL {}",
-            p.dashes, p.air_jumps, p.wall_slide
-        ),
-        pal::PALE,
-    );
+    let p = &s.world.player;
+    r.rect_outline(p.x - 1, p.y - 1, player::W + 2, player::H + 2, pal::STEEL);
+    body(r, s, full);
+    params(r, s, full);
+    log(r, s, full);
+    status(r, s);
+}
 
-    let mut py = 2;
-    for (_, name, kind, v) in a.params.iter() {
-        let (text, c) = match kind {
-            ParamKind::Bool => (
-                format!("{name} {}", if v != 0.0 { "ON" } else { "-" }),
-                if v != 0.0 { pal::GREEN } else { pal::STEEL },
-            ),
-            ParamKind::Float => (format!("{name} {v:+.0}"), pal::PALE),
-            ParamKind::Trigger { .. } => (
-                name.to_string(),
-                if v > 0.0 { pal::YELLOW } else { pal::STEEL },
-            ),
+/// Width of the widest line.
+fn width(lines: &[Line]) -> i32 {
+    lines
+        .iter()
+        .map(|(t, _)| Font::Tiny.measure(t, 1))
+        .max()
+        .unwrap_or(0)
+}
+
+/// Lines on a dim panel, left- or right-aligned at `x`, from `y` down. Returns the panel
+/// height.
+fn panel(r: &mut dyn Raster, lines: &[Line], x: i32, y: i32, right: bool, min_w: i32) -> i32 {
+    if lines.is_empty() {
+        return 0;
+    }
+    let w = width(lines).max(min_w) + 4;
+    let h = LINE * lines.len() as i32 + 2;
+    let px = if right { x - w } else { x };
+    r.blend_rect(px, y, w, h, pal::BLACK, PANEL);
+    for (k, (t, c)) in lines.iter().enumerate() {
+        let tx = if right {
+            x - 2 - Font::Tiny.measure(t, 1)
+        } else {
+            x + 2
         };
-        let w = Font::Tiny.measure(&text, 1);
-        font::draw(r, Font::Tiny, W - 3 - w, py, &text, c);
-        py += LINE;
+        font::draw(r, Font::Tiny, tx, y + 2 + LINE * k as i32, t, *c);
     }
+    h
+}
 
-    let mut ly = H - 3 - LINE * s.log.len() as i32;
-    for (tick, text) in &s.log {
-        font::draw(
-            r,
-            Font::Tiny,
-            3,
-            ly,
-            &format!("{tick} {text}"),
-            pal::STEEL_LT,
-        );
-        ly += LINE;
+/// A short name for the body's mode.
+fn mode(m: Mode) -> &'static str {
+    match m {
+        Mode::Normal => "FREE",
+        Mode::Roll { .. } => "ROLL",
+        Mode::HardLand { .. } => "HARD",
+        Mode::Dash { .. } => "DASH",
+        Mode::Climb => "CLIMB",
+        Mode::Dive { .. } => "DIVE",
+        Mode::DiveLand { .. } => "IMPACT",
     }
+}
+
+/// Top left: animator and body.
+fn body(r: &mut dyn Raster, s: &Session, full: bool) {
+    let (a, p, t) = (&s.animator, &s.world.player, &s.world.tuning);
+    let lock = if a.locked() { " LOCK" } else { "" };
+    let mut lines: Vec<Line> = vec![
+        (
+            format!(
+                "{} F{} {:.2}{lock}",
+                a.state_name(),
+                a.frame(),
+                a.time_in_state()
+            ),
+            if a.locked() { pal::RED } else { pal::YELLOW },
+        ),
+        (
+            format!(
+                "{} {:+.0},{:+.0} D{} A{}",
+                mode(p.mode),
+                p.vx,
+                p.vy,
+                p.dashes,
+                p.air_jumps
+            ),
+            pal::PALE,
+        ),
+    ];
+    if full {
+        let hist: Vec<String> = a
+            .history()
+            .map(|(id, secs)| format!("{}{:.0}", a.graph().state(id).name, secs * 1000.0))
+            .collect();
+        lines.push((hist.join(" "), pal::STEEL_LT));
+    }
+    // Room for the meters below the text.
+    let meters = [
+        ("J", p.buffer / t.jump_buffer, pal::YELLOW),
+        ("C", p.coyote / t.coyote_time, pal::GREEN),
+        ("D", p.dash_buffer / t.dash_buffer, pal::YELLOW),
+        ("V", p.var_jump / t.var_jump_time, pal::CYAN),
+        ("S", p.stamina / t.stamina, pal::GREEN),
+    ];
+    let meter_w = 14;
+    let min_w = meter_w * meters.len() as i32;
+    let h = panel(r, &lines, 0, 0, false, min_w);
+    let y = h;
+    r.blend_rect(0, y, min_w + 4, LINE + 1, pal::BLACK, PANEL);
+    for (k, (label, v, c)) in meters.iter().enumerate() {
+        let x = 2 + k as i32 * meter_w;
+        font::draw(r, Font::Tiny, x, y, label, pal::STEEL_LT);
+        r.fill_rect(x + 4, y + 1, 8, 3, pal::STONE_DK);
+        r.fill_rect(
+            x + 4,
+            y + 1,
+            (8.0 * v.clamp(0.0, 1.0)).round() as i32,
+            3,
+            *c,
+        );
+    }
+}
+
+/// Top right: parameters.
+fn params(r: &mut dyn Raster, s: &Session, full: bool) {
+    let mut lines: Vec<Line> = Vec::new();
+    for (_, name, kind, v) in s.animator.params.iter() {
+        let line = match kind {
+            ParamKind::Bool if v != 0.0 => Some((name.to_string(), pal::GREEN)),
+            ParamKind::Bool => full.then(|| (name.to_string(), pal::STEEL)),
+            ParamKind::Float if v.abs() >= 0.5 => Some((format!("{name} {v:+.0}"), pal::PALE)),
+            ParamKind::Float => full.then(|| (format!("{name} 0"), pal::STEEL)),
+            ParamKind::Trigger { .. } if v > 0.0 => Some((format!("{name}!"), pal::YELLOW)),
+            ParamKind::Trigger { .. } => full.then(|| (name.to_string(), pal::STEEL)),
+        };
+        lines.extend(line);
+    }
+    panel(r, &lines, W, 0, true, 0);
+}
+
+/// Bottom left: the newest events.
+fn log(r: &mut dyn Raster, s: &Session, full: bool) {
+    let n = if full { s.log.len() } else { COMPACT_LOG };
+    let lines: Vec<Line> = s
+        .log
+        .iter()
+        .skip(s.log.len().saturating_sub(n))
+        .map(|(tick, text)| (format!("{tick} {text}"), pal::STEEL_LT))
+        .collect();
+    let h = LINE * lines.len() as i32 + 2;
+    panel(r, &lines, 0, H - h, false, 0);
+}
+
+/// Bottom right: preset and clock.
+fn status(r: &mut dyn Raster, s: &Session) {
     let preset = s.preset.map_or("custom", |p| p.name()).to_uppercase();
-    let w = Font::Tiny.measure(&preset, 1);
-    font::draw(
-        r,
-        Font::Tiny,
-        W - 3 - w,
-        H - 3 - 2 * LINE,
-        &preset,
-        pal::CYAN,
-    );
     let clock = if s.clock.paused {
-        "PAUSED (. STEP, P GO)".to_string()
+        "PAUSED".to_string()
     } else {
         format!("X{}", s.clock.speed())
     };
-    let w = Font::Tiny.measure(&clock, 1);
-    font::draw(r, Font::Tiny, W - 3 - w, H - 3 - LINE, &clock, pal::YELLOW);
-}
-
-/// A labeled bar, `v` in 0..1.
-fn meter(r: &mut dyn Raster, x: i32, y: i32, label: &str, v: f32, c: Rgb) {
-    font::draw(r, Font::Tiny, x, y, label, pal::STEEL_LT);
-    let bx = x + 36;
-    r.fill_rect(bx, y + 1, 30, 3, pal::STONE_DK);
-    r.fill_rect(bx, y + 1, (30.0 * v.clamp(0.0, 1.0)).round() as i32, 3, c);
+    let lines = [(format!("{preset} {clock}"), pal::CYAN)];
+    panel(r, &lines, W, H - LINE - 2, true, 0);
 }

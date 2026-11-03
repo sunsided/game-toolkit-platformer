@@ -32,4 +32,9 @@ impl Rect {
     pub fn bottom(self) -> i32 {
         self.y + self.h
     }
+
+    /// Whether the two boxes share any pixel.
+    pub fn intersects(self, o: Rect) -> bool {
+        self.x < o.right() && o.x < self.right() && self.y < o.bottom() && o.y < self.bottom()
+    }
 }

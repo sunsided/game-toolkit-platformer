@@ -15,8 +15,30 @@ use crate::sim::{DT, Event, Intent, Level, Mode, Preset, Tuning, World, player};
 pub use clock::Clock;
 pub use fx::{Fx, FxColor};
 
-/// Lines kept in the event log.
-const LOG: usize = 10;
+/// Lines kept in the event log (the overlay's bottom-left corner).
+const LOG: usize = 6;
+
+/// How much of the debug overlay to show.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Overlay {
+    /// The essentials in the corners: state, body, active parameters, a short log.
+    Compact,
+    /// Everything: history, every parameter, timers as bars, a longer log.
+    Full,
+    /// Nothing.
+    Off,
+}
+
+impl Overlay {
+    /// The next mode, wrapping.
+    pub fn next(self) -> Self {
+        match self {
+            Overlay::Compact => Overlay::Full,
+            Overlay::Full => Overlay::Off,
+            Overlay::Off => Overlay::Compact,
+        }
+    }
+}
 
 /// Clock and view controls for one frame.
 #[derive(Clone, Copy, Debug, Default)]
@@ -31,8 +53,8 @@ pub struct Keys {
     pub faster: bool,
     /// Normal speed.
     pub normal: bool,
-    /// Toggle the debug overlay.
-    pub debug: bool,
+    /// Next overlay mode (compact, full, off).
+    pub overlay: bool,
     /// Back to the spawn.
     pub reset: bool,
     /// Switch to the next feel preset.
@@ -55,8 +77,8 @@ pub struct Session {
     pub prev: (f32, f32),
     /// Live effects.
     pub fx: Vec<Fx>,
-    /// The debug overlay is on.
-    pub debug: bool,
+    /// How much of the debug overlay to show.
+    pub overlay: Overlay,
     /// Recent events, newest last, with the step they happened in.
     pub log: VecDeque<(u64, String)>,
     /// The intent of the last step, for the overlay.
@@ -86,7 +108,7 @@ impl Session {
             clock: Clock::default(),
             latch: Intent::default(),
             fx: Vec::new(),
-            debug: true,
+            overlay: Overlay::Compact,
             log: VecDeque::new(),
             last_intent: Intent::default(),
             preset: None,
@@ -102,13 +124,13 @@ impl Session {
             self.clock.step();
         }
         self.clock.change(keys.slower, keys.faster, keys.normal);
-        if keys.debug {
-            self.debug = !self.debug;
+        if keys.overlay {
+            self.overlay = self.overlay.next();
         }
         if keys.reset {
             let (level, tuning) = (self.world.level.clone(), self.world.tuning);
             *self = Self {
-                debug: self.debug,
+                overlay: self.overlay,
                 clock: self.clock.clone(),
                 preset: self.preset,
                 ..Self::with(level, tuning)

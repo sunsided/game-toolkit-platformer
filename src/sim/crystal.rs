@@ -35,10 +35,7 @@ impl Crystal {
     /// wasting it.
     pub fn collect(&mut self, body: Rect, dt: f32, needs: bool, t: &Tuning) -> bool {
         self.cooldown = (self.cooldown - dt).max(0.0);
-        let touches = body.x < self.area.right()
-            && self.area.x < body.right()
-            && body.y < self.area.bottom()
-            && self.area.y < body.bottom();
+        let touches = body.intersects(self.area);
         if self.ready() && touches && needs {
             self.cooldown = t.crystal_respawn;
             return true;

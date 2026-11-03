@@ -2,15 +2,17 @@
 //!
 //! The pattern: entering a state that answers an event (jump, dash, land, ...) is a
 //! trigger, fired by the driver from the simulation's events; staying in or leaving a
-//! continuous state (running, climbing, dashing) is a bool or float the driver sets every
+//! continuous state (running, climbing, pushing) is a bool or float the driver sets every
 //! step. Transitions out of an event are lock-breaking where the event should cut the
 //! current animation short.
 //!
 //! ```text
-//!   idle <-> run <-> skid        ground, by speed and skid
-//!     \        |
-//!      `-> takeoff -> rise -> apex -> fall -> land -> idle
-//!          double (flip), wall_jump, hop, drop: one-shots into rise / fall
+//!   idle <-> run <-> skid                ground, by speed and skid
+//!   idle -> idle_fidget -> idle          after standing a while
+//!   idle <-> look_up / look_down         holding up or down standing still
+//!   idle <-> push / pull / box_hold      at a block
+//!   takeoff -> rise -> apex -> fall -> land -> idle
+//!   double (flip) or wings, wall_jump, hop, drop: one-shots into rise / fall
 //!   any -> roll | hard_land | dash_{side,up,down} | climb <-> grip_slip | wall_slide
 //!   any -> dive_windup -> dive -> dive_land
 //! ```
@@ -24,6 +26,10 @@ use crate::anim::{Clip, Cond, Graph, GraphSpec, Name, Playback, StateSpec, Trans
 const STILL: f32 = 10.0;
 /// Within this vertical speed of zero the hero is at the apex.
 const APEX: f32 = 40.0;
+/// Seconds up or down must be held standing still before the hero looks.
+const LOOK_DELAY: f32 = 0.15;
+/// Seconds of standing idle before a fidget.
+const FIDGET_AFTER: f32 = 5.0;
 
 /// A bool parameter is on.
 fn is(p: &'static str) -> Cond<Name> {
@@ -60,26 +66,45 @@ fn once(frames: &[(u16, f32)]) -> Clip {
     Clip::new(Playback::Once, frames)
 }
 
+/// A once-clip of `sprites`, `secs` each.
+fn once_each(sprites: &[u16], secs: f32) -> Clip {
+    Clip::uniform(Playback::Once, sprites, secs)
+}
+
 /// The air states, which land.
-const AIR: [&str; 8] = [
+const AIR: [&str; 9] = [
     "takeoff",
     "rise",
     "apex",
     "fall",
     "double",
+    "wings",
     "wall_jump",
     "hop",
     "drop",
 ];
+/// Standing still: where looking, running and blocks start.
+const STANDING: [&str; 4] = ["idle", "idle_fidget", "look_up", "look_down"];
 /// The plain ground states, which can walk off ledges.
-const GROUND: [&str; 4] = ["idle", "run", "skid", "land"];
+const GROUND: [&str; 10] = [
+    "idle",
+    "idle_fidget",
+    "look_up",
+    "look_down",
+    "run",
+    "skid",
+    "land",
+    "push",
+    "pull",
+    "box_hold",
+];
+/// The block states.
+const BLOCK: [&str; 3] = ["push", "pull", "box_hold"];
 /// The dash states.
 const DASHES: [&str; 3] = ["dash_side", "dash_up", "dash_down"];
 
 /// The hero's graph by names: parameters, states, transitions.
 pub fn spec() -> GraphSpec {
-    let pairs =
-        |v: &[u16], secs: f32| -> Vec<(u16, f32)> { v.iter().map(|&x| (x, secs)).collect() };
     GraphSpec::new()
         // Continuous facts, set every step.
         .bool("grounded")
@@ -90,9 +115,14 @@ pub fn spec() -> GraphSpec {
         .bool("slipping")
         .bool("wall_slide")
         .bool("hard_landing")
+        .bool("wings")
+        .bool("pushing")
+        .bool("pulling")
+        .bool("holding")
         .float("speed")
         .float("vy")
         .float("dash_y")
+        .float("look")
         // Events. Zero TTL where a same-step event of higher priority must win outright.
         .trigger("jump", 0.05)
         .trigger("double", 0.05)
@@ -106,11 +136,32 @@ pub fn spec() -> GraphSpec {
         .trigger("grab", 0.05)
         .trigger("dive", 0.05)
         .trigger("impact", 0.0)
-        // Ground.
+        // Standing.
         .state(StateSpec::new(
             "idle",
-            looping(&[s::IDLE_A, s::IDLE_B], 0.5),
+            Clip::new(Playback::PingPong, &[(s::IDLE_A, 0.6), (s::IDLE_B, 0.4)]),
         ))
+        .state(
+            StateSpec::new(
+                "idle_fidget",
+                once(&[
+                    (s::FIDGET[0], 0.35),
+                    (s::FIDGET[1], 0.25),
+                    (s::FIDGET[2], 0.5),
+                    (s::FIDGET[3], 0.3),
+                ]),
+            )
+            .then("idle"),
+        )
+        .state(StateSpec::new(
+            "look_up",
+            once(&[(s::LOOK_UP_A, 0.08), (s::LOOK_UP_B, 0.1)]),
+        ))
+        .state(StateSpec::new(
+            "look_down",
+            once(&[(s::LOOK_DOWN_A, 0.08), (s::LOOK_DOWN_B, 0.1)]),
+        ))
+        // Ground.
         .state(
             StateSpec::new(
                 "run",
@@ -127,7 +178,23 @@ pub fn spec() -> GraphSpec {
                 .lock(0.2)
                 .then("idle"),
         )
-        .state(StateSpec::new("roll", once(&pairs(&s::ROLL, 0.08))))
+        .state(StateSpec::new("roll", once_each(&s::ROLL, 0.08)))
+        // Blocks.
+        .state(
+            StateSpec::new(
+                "push",
+                looping(&s::PUSH, 0.14).marker(0, "step").marker(2, "step"),
+            )
+            .rate_by("speed", 40.0, 0.0, 1.5),
+        )
+        .state(
+            StateSpec::new(
+                "pull",
+                looping(&s::PULL, 0.16).marker(0, "step").marker(2, "step"),
+            )
+            .rate_by("speed", 30.0, 0.0, 1.5),
+        )
+        .state(StateSpec::new("box_hold", looping(&[s::BOX_HOLD], 0.1)))
         // Air.
         .state(StateSpec::new("takeoff", once(&[(s::TAKEOFF, 0.06)])).then("rise"))
         .state(StateSpec::new("rise", looping(&[s::RISE], 0.1)))
@@ -137,9 +204,22 @@ pub fn spec() -> GraphSpec {
             looping(&[s::FALL_A, s::FALL_B], 0.1),
         ))
         .state(
-            StateSpec::new("double", once(&pairs(&s::FLIP, 0.05)))
+            StateSpec::new("double", once_each(&s::FLIP, 0.05))
                 .lock(0.1)
                 .then("rise"),
+        )
+        .state(
+            StateSpec::new(
+                "wings",
+                once(&[
+                    (s::WINGS[0], 0.05),
+                    (s::WINGS[1], 0.08),
+                    (s::WINGS[2], 0.12),
+                    (s::WINGS[3], 0.06),
+                ]),
+            )
+            .lock(0.13)
+            .then("rise"),
         )
         .state(StateSpec::new("wall_jump", once(&[(s::WALL_JUMP, 0.1)])).then("rise"))
         .state(StateSpec::new("hop", once(&[(s::HOP, 0.12)])).then("rise"))
@@ -149,8 +229,8 @@ pub fn spec() -> GraphSpec {
         .state(StateSpec::new("dash_up", looping(&s::DASH_UP, 0.04)))
         .state(StateSpec::new("dash_down", looping(&s::DASH_DOWN, 0.04)))
         .state(StateSpec::new("climb", looping(&s::CLIMB, 0.12)).rate_by("vy", 45.0, 0.0, 2.0))
-        .state(StateSpec::new("wall_slide", looping(&s::WALL_SLIDE, 0.08)))
         .state(StateSpec::new("grip_slip", looping(&s::WALL_SLIDE, 0.12)))
+        .state(StateSpec::new("wall_slide", looping(&s::WALL_SLIDE, 0.08)))
         // Dive.
         .state(StateSpec::new("dive_windup", once(&[(s::DIVE_WINDUP, 0.08)])).then("dive"))
         .state(StateSpec::new("dive", looping(&s::DIVE, 0.04)))
@@ -198,6 +278,13 @@ pub fn spec() -> GraphSpec {
         .transition(
             TransitionSpec::any("dash_side", trig("dash"))
                 .priority(84)
+                .breaks_lock()
+                .restart(),
+        )
+        // The air jump's look is the binding's choice: wings or a flip.
+        .transition(
+            TransitionSpec::any("wings", trig("double").and(is("wings")))
+                .priority(81)
                 .breaks_lock()
                 .restart(),
         )
@@ -252,8 +339,9 @@ pub fn spec() -> GraphSpec {
             TransitionSpec::new(["grip_slip"], "climb", not("slipping").and(is("climbing")))
                 .priority(51),
         )
-        .transition(TransitionSpec::new(["grip_slip"], "fall", not("climbing")).priority(50))
-        .transition(TransitionSpec::new(["climb"], "fall", not("climbing")).priority(50))
+        .transition(
+            TransitionSpec::new(["climb", "grip_slip"], "fall", not("climbing")).priority(50),
+        )
         .transition(
             TransitionSpec::new(
                 ["roll"],
@@ -285,13 +373,26 @@ pub fn spec() -> GraphSpec {
         .transition(TransitionSpec::new(["wall_slide"], "fall", not("wall_slide")).priority(40))
         // Ground.
         .transition(TransitionSpec::new(GROUND, "fall", not("grounded")).priority(30))
-        .transition(TransitionSpec::new(["run", "idle"], "skid", is("skid")).priority(21))
+        // Blocks: whichever the body does now; standing still again when it lets go.
+        .transition(TransitionSpec::new(GROUND, "push", is("pushing")).priority(25))
+        .transition(TransitionSpec::new(GROUND, "pull", is("pulling")).priority(25))
+        .transition(TransitionSpec::new(GROUND, "box_hold", is("holding")).priority(25))
+        .transition(
+            TransitionSpec::new(
+                BLOCK,
+                "idle",
+                not("pushing").and(not("pulling")).and(not("holding")),
+            )
+            .priority(24),
+        )
+        .transition(TransitionSpec::new(STANDING, "skid", is("skid")).priority(21))
+        .transition(TransitionSpec::new(["run"], "skid", is("skid")).priority(21))
         .transition(
             TransitionSpec::new(["skid"], "run", not("skid").and(above("speed", STILL)))
                 .priority(20),
         )
         .transition(TransitionSpec::new(["skid"], "idle", not("skid")).priority(19))
-        .transition(TransitionSpec::new(["idle"], "run", above("speed", STILL)).priority(10))
+        .transition(TransitionSpec::new(STANDING, "run", above("speed", STILL)).priority(10))
         .transition(TransitionSpec::new(["run"], "idle", below("speed", STILL)).priority(10))
         .transition(
             TransitionSpec::new(
@@ -300,6 +401,27 @@ pub fn spec() -> GraphSpec {
                 above("speed", STILL).and(Cond::After(0.05)),
             )
             .priority(10),
+        )
+        .transition(
+            TransitionSpec::new(
+                ["idle", "idle_fidget", "look_down"],
+                "look_up",
+                below("look", -LOOK_DELAY),
+            )
+            .priority(9),
+        )
+        .transition(
+            TransitionSpec::new(
+                ["idle", "idle_fidget", "look_up"],
+                "look_down",
+                above("look", LOOK_DELAY),
+            )
+            .priority(9),
+        )
+        .transition(TransitionSpec::new(["look_up"], "idle", above("look", -0.01)).priority(8))
+        .transition(TransitionSpec::new(["look_down"], "idle", below("look", 0.01)).priority(8))
+        .transition(
+            TransitionSpec::new(["idle"], "idle_fidget", Cond::After(FIDGET_AFTER)).priority(1),
         )
         // Air arc.
         .transition(TransitionSpec::new(["rise"], "fall", above("vy", APEX)).priority(11))

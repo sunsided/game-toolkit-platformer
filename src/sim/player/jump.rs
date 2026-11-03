@@ -1,5 +1,7 @@
 //! Jumps, in order of preference: out of a roll, from the ground, within coyote time, off
-//! a wall (or straight up it while climbing), and in the air. Down + jump on a one-way
+//! a wall (or straight up it while climbing), and in the air. Wall jumps follow the stick:
+//! toward the wall is a short kick back onto the same wall (chained, it scales the wall),
+//! away a full leap; up and down tilt it. Down + jump on a one-way
 //! platform drops through it instead.
 
 use super::{Mode, Player};
@@ -73,9 +75,17 @@ impl Player {
                 } else {
                     wall.unwrap_or(self.facing)
                 };
-                self.vx = -side as f32 * t.wall_jump_speed;
+                // The stick aims the jump. Sideways: toward the wall is a small kick
+                // that arcs back onto the same wall higher up (chained, it scales the
+                // wall), away is the full leap, neutral in between. Up and down tilt the
+                // jump higher or flatter.
+                let away = (-move_x * side as f32 + 1.0) / 2.0;
+                let speed = t.wall_climb_speed + (t.wall_jump_speed - t.wall_climb_speed) * away;
+                let lock = t.wall_climb_lock + (t.wall_jump_lock - t.wall_climb_lock) * away;
+                self.vy = -t.jump_speed * (1.0 - t.wall_jump_aim * i.move_y.clamp(-1.0, 1.0));
+                self.vx = -side as f32 * speed;
                 self.facing = -side;
-                self.force_move = t.wall_jump_lock;
+                self.force_move = lock;
                 self.force_dir = -side;
             }
             JumpKind::Climb => {

@@ -30,6 +30,10 @@ impl Player {
         }
         match self.mode {
             Mode::Normal => {
+                if self.shove != super::Shove::None {
+                    // Grab beside a block on the ground holds the block, not the wall.
+                    return;
+                }
                 let rising = self.vy < 0.0 && self.var_jump > 0.0;
                 if i.grab
                     && self.regrab <= 0.0

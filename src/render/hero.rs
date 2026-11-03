@@ -17,6 +17,8 @@ struct Pose {
     dy: f32,
     /// Body color.
     c: Rgb,
+    /// Wings spread at this angle from straight back, degrees (Monarch Wings frames).
+    wings: Option<f32>,
 }
 
 /// A pose of `w` x `h`, rotated `rot` degrees, colored `c`.
@@ -27,6 +29,7 @@ const fn p(w: f32, h: f32, rot: f32, c: Rgb) -> Pose {
         rot,
         dy: 0.0,
         c,
+        wings: None,
     }
 }
 
@@ -43,6 +46,31 @@ fn pose(sprite: u16) -> Pose {
     match sprite {
         s::IDLE_A => p(6.0, 12.0, 0.0, g),
         s::IDLE_B => p(6.0, 11.0, 0.0, g),
+        s::LOOK_UP_A => p(6.0, 12.0, -10.0, g),
+        s::LOOK_UP_B => p(6.0, 13.0, -18.0, g),
+        s::LOOK_DOWN_A => p(7.0, 11.0, 12.0, g),
+        s::LOOK_DOWN_B => p(8.0, 9.0, 22.0, g),
+        48 => p(6.0, 12.0, -14.0, g),
+        49 => p(6.0, 12.0, 0.0, g),
+        50 => p(5.0, 14.0, 0.0, pal::PALE),
+        51 => p(7.0, 11.0, 0.0, g),
+        52..=55 => {
+            let spread = [60.0, 150.0, 100.0, 30.0][(sprite - 52) as usize];
+            Pose {
+                wings: Some(spread),
+                dy: -1.0,
+                ..p(6.0, 12.0, 0.0, a)
+            }
+        }
+        56..=59 => Pose {
+            dy: -(((sprite - 56) % 2) as f32),
+            ..p(7.0, 11.0, 24.0, g)
+        },
+        60..=63 => Pose {
+            dy: -(((sprite - 60) % 2) as f32),
+            ..p(7.0, 11.0, -20.0, g)
+        },
+        s::BOX_HOLD => p(7.0, 11.0, 6.0, g),
         s::RUN_A | s::RUN_C => p(7.0, 11.0, 10.0, g),
         s::RUN_B | s::RUN_D => Pose {
             dy: -1.0,
@@ -123,6 +151,17 @@ pub fn draw(
             }
         }
         return;
+    }
+    if let Some(spread) = pz.wings {
+        // Two pale wings from the shoulders, spread back and up.
+        for k in [0.0f32, 0.35] {
+            let a = (-90.0 - f * (spread * (1.0 - k))).to_radians();
+            let (bx, by) = rot(-f, -hh + 3.0);
+            let tip = (bx + a.cos() * 9.0, by + a.sin() * 9.0);
+            let a2 = a + f * 0.6;
+            let mid = (bx + a2.cos() * 6.0, by + a2.sin() * 6.0);
+            r.fill_polygon(&[(bx, by), tip, mid], pal::WHITE);
+        }
     }
     let (ex, ey) = rot(f * (hw - 1.5), -hh + 2.5);
     r.put(ex.floor() as i32, ey.floor() as i32, pal::WHITE);

@@ -9,8 +9,8 @@
 use animation::gfx::font::{self, Font};
 use animation::gfx::{Canvas, H, Raster, W, palette as pal, png};
 use animation::render::{backdrop, hero};
-use animation::session::Session;
-use animation::sim::{Intent, TILE, World, player};
+use animation::session::{Overlay, Session};
+use animation::sim::{Intent, Preset, TILE, World, player};
 
 /// Steps between onion-skin copies.
 const EVERY: usize = 5;
@@ -19,6 +19,8 @@ const EVERY: usize = 5;
 struct Script {
     /// File name and caption.
     name: &'static str,
+    /// Feel preset; `None`: the default.
+    preset: Option<Preset>,
     /// Start here (hitbox top-left, pixels) instead of the spawn.
     at: Option<(i32, i32)>,
     /// Steps to play.
@@ -36,6 +38,14 @@ fn jump_at(k: usize, at: usize, hold: usize, base: Intent) -> Intent {
     }
 }
 
+/// Moving with the stick at `x`.
+fn go(x: f32) -> Intent {
+    Intent {
+        move_x: x,
+        ..Intent::default()
+    }
+}
+
 /// Moving right.
 const RIGHT: Intent = Intent {
     move_x: 1.0,
@@ -47,22 +57,71 @@ const RIGHT: Intent = Intent {
     dive_pressed: false,
 };
 
+/// The side (-1, 1) of a wall within 2 px, or 0.
+fn wall_near(w: &World) -> i32 {
+    let r = w.player.rect();
+    [-1, 1]
+        .into_iter()
+        .find(|&s| (1..=2).any(|d| w.level.overlaps(r.shifted(s * d, 0))))
+        .unwrap_or(0)
+}
+
+/// Bounce between walls: jump off whichever wall is near (once falling or slow), with the
+/// stick `aim` (-1 away from it, 1 toward it); start with a jump at step 5.
+fn bounce(k: usize, w: &World, aim: f32) -> Intent {
+    if k < 5 {
+        return Intent::default();
+    }
+    let side = wall_near(w);
+    let x = if side != 0 {
+        aim * side as f32
+    } else {
+        // In flight: keep going away (the facing after a wall jump), or turn back.
+        -aim * w.player.facing as f32
+    };
+    Intent {
+        move_x: x,
+        jump_pressed: k == 5 || (side != 0 && w.player.vy > -30.0 && !w.player.grounded),
+        jump_held: true,
+        ..Intent::default()
+    }
+}
+
+/// Top of the narrow chimney's lid.
+const LID_A: i32 = 8 * TILE;
+
 /// The scripted moves.
 const SCRIPTS: &[Script] = &[
     Script {
         name: "jump",
+        preset: None,
         at: None,
         steps: 150,
         intent: |k, _| jump_at(k, 20, 30, RIGHT),
     },
     Script {
         name: "double-jump",
+        preset: None,
         at: None,
-        steps: 170,
+        steps: 150,
         intent: |k, _| {
-            let i = jump_at(k, 10, 20, RIGHT);
+            let i = jump_at(k, 10, 20, Intent::default());
             if k >= 45 {
-                jump_at(k, 45, 15, RIGHT)
+                jump_at(k, 45, 15, Intent::default())
+            } else {
+                i
+            }
+        },
+    },
+    Script {
+        name: "wings",
+        preset: Some(Preset::HollowKnight),
+        at: None,
+        steps: 150,
+        intent: |k, _| {
+            let i = jump_at(k, 10, 20, Intent::default());
+            if k >= 45 {
+                jump_at(k, 45, 15, Intent::default())
             } else {
                 i
             }
@@ -70,17 +129,19 @@ const SCRIPTS: &[Script] = &[
     },
     Script {
         name: "roll",
-        at: Some((3 * TILE, 9 * TILE - player::H)),
-        steps: 200,
-        intent: |_, _| RIGHT,
+        preset: None,
+        at: Some((16 * TILE, LID_A - player::H)),
+        steps: 160,
+        intent: |_, _| go(-1.0),
     },
     Script {
         name: "hard-landing",
-        at: Some((5 * TILE, 9 * TILE - player::H)),
-        steps: 200,
+        preset: None,
+        at: Some((15 * TILE, LID_A - player::H)),
+        steps: 160,
         intent: |k, w| {
             if k < 5 || w.player.grounded {
-                RIGHT
+                go(-1.0)
             } else {
                 Intent::default()
             }
@@ -88,44 +149,40 @@ const SCRIPTS: &[Script] = &[
     },
     Script {
         name: "dash-up",
+        preset: None,
         at: None,
-        steps: 120,
+        steps: 110,
         intent: |k, _| {
-            let i = jump_at(k, 5, 10, RIGHT);
-            if k == 25 {
-                Intent {
-                    move_y: -1.0,
-                    dash_pressed: true,
-                    ..i
-                }
-            } else {
-                i
+            let i = jump_at(k, 5, 10, Intent::default());
+            Intent {
+                move_y: if k == 20 { -1.0 } else { 0.0 },
+                dash_pressed: k == 20,
+                ..i
             }
         },
     },
     Script {
         name: "dash-down",
-        at: Some((15 * TILE, 17 * TILE - player::H)),
+        preset: None,
+        at: Some((16 * TILE, LID_A - player::H)),
         steps: 90,
         intent: |k, _| {
             let i = jump_at(k, 5, 30, Intent::default());
-            if k == 40 {
-                Intent {
-                    move_y: 1.0,
-                    dash_pressed: true,
-                    ..i
-                }
-            } else {
-                i
+            Intent {
+                move_y: if k == 40 { 1.0 } else { 0.0 },
+                dash_pressed: k == 40,
+                ..i
             }
         },
     },
     Script {
         name: "climb",
-        at: Some((42 * TILE - player::W, 18 * TILE - player::H)),
-        steps: 260,
+        preset: None,
+        at: Some((31 * TILE + 1, 25 * TILE - player::H)),
+        steps: 300,
         intent: |k, _| {
             let base = Intent {
+                move_x: if k < 2 { -1.0 } else { 0.0 },
                 grab: k >= 5,
                 move_y: if k > 20 { -1.0 } else { 0.0 },
                 ..Intent::default()
@@ -134,37 +191,37 @@ const SCRIPTS: &[Script] = &[
         },
     },
     Script {
-        name: "wall-jump",
-        at: Some((47 * TILE - player::W - 8, 25 * TILE - player::H)),
-        steps: 140,
-        intent: |k, _| {
-            let base = if k < 50 {
-                RIGHT
-            } else {
-                Intent {
-                    move_x: -1.0,
-                    ..Intent::default()
-                }
-            };
-            let i = jump_at(k, 5, 20, base);
-            if k >= 30 {
-                jump_at(
-                    k,
-                    30,
-                    20,
-                    Intent {
-                        move_x: if k < 50 { 1.0 } else { -1.0 },
-                        ..Intent::default()
-                    },
-                )
+        name: "chimney-bounce",
+        preset: None,
+        at: Some((16 * TILE, 25 * TILE - player::H)),
+        steps: 220,
+        intent: |k, w| bounce(k, w, -1.0),
+    },
+    Script {
+        name: "wall-scale",
+        preset: Some(Preset::HollowKnight),
+        at: Some((25 * TILE, 25 * TILE - player::H)),
+        steps: 260,
+        intent: |k, w| {
+            let i = bounce(k, w, 1.0);
+            if wall_near(w) == 0 {
+                Intent { move_x: -1.0, ..i }
             } else {
                 i
             }
         },
     },
     Script {
+        name: "meat-boy-bounce",
+        preset: Some(Preset::MeatBoy),
+        at: Some((27 * TILE, 14 * TILE)),
+        steps: 220,
+        intent: |k, w| bounce(k, w, -1.0),
+    },
+    Script {
         name: "dive",
-        at: Some((15 * TILE, 17 * TILE - player::H)),
+        preset: None,
+        at: None,
         steps: 100,
         intent: |k, _| {
             let i = jump_at(k, 5, 30, Intent::default());
@@ -176,12 +233,53 @@ const SCRIPTS: &[Script] = &[
     },
     Script {
         name: "drop-through",
-        at: Some((11 * TILE, 21 * TILE - player::H)),
+        preset: None,
+        at: Some((6 * TILE, 22 * TILE - player::H)),
         steps: 80,
         intent: |k, _| Intent {
             move_y: if (10..14).contains(&k) { 1.0 } else { 0.0 },
             ..jump_at(k, 12, 2, Intent::default())
         },
+    },
+    Script {
+        name: "push-pull",
+        preset: None,
+        at: None,
+        steps: 400,
+        intent: |k, _| match k {
+            0..180 => RIGHT,
+            180..200 => Intent {
+                grab: true,
+                ..Intent::default()
+            },
+            200..360 => Intent {
+                move_x: -1.0,
+                grab: true,
+                ..Intent::default()
+            },
+            _ => Intent::default(),
+        },
+    },
+    Script {
+        name: "look",
+        preset: None,
+        at: None,
+        steps: 160,
+        intent: |k, _| Intent {
+            move_y: match k {
+                10..70 => -1.0,
+                90..150 => 1.0,
+                _ => 0.0,
+            },
+            ..Intent::default()
+        },
+    },
+    Script {
+        name: "idle-fidget",
+        preset: None,
+        at: None,
+        steps: 780,
+        intent: |_, _| Intent::default(),
     },
 ];
 
@@ -196,6 +294,10 @@ fn main() {
             continue;
         }
         let mut s = Session::new();
+        if let Some(p) = sc.preset {
+            s.world.tuning = p.tuning();
+            s.preset = Some(p);
+        }
         if let Some((x, y)) = sc.at {
             let p = &mut s.world.player;
             p.x = x;
@@ -217,6 +319,9 @@ fn main() {
                 hero::draw(&mut canvas, x, y, s.animator.sprite(), p.facing, None, 1.0);
             }
         }
+        // The final frame on top: blocks, crystals, effects, the hero where it ended.
+        s.overlay = Overlay::Off;
+        animation::render::scene(&mut canvas, &s, 0.0);
         caption(&mut canvas, sc.name, &seen);
         let path = format!("{dir}/{}.png", sc.name);
         std::fs::write(&path, png::encode(&canvas, 3)).expect("write snapshot");

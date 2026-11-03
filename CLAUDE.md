@@ -32,8 +32,10 @@ strict lints). Design docs live in `docs/`; keep them in sync when behavior chan
   rects. Copied from Starscorcher.
 - `src/render/`: backdrop, scene, placeholder hero poses (`hero.rs`, one per sprite number
   until there is art), the debug overlay (`debug.rs`).
-- `src/app.rs` + `src/app/`: the only toolkit glue: input (keyboard + gamepad), presenting,
-  screenshots.
+- `src/app.rs` + `src/app/`: the only toolkit glue: input (keyboard + gamepad, Hollow
+  Knight's mapping; `app/controls.rs`), presenting, screenshots.
+- `src/sim/level.rs`: the demo level sits around the overlay's corners; keep stairs within
+  a plain held jump (a test checks the left stairs).
 - `examples/snapshot.rs`: headless filmstrips of scripted moves (`task snapshot`). To look
   at a move, add a script there.
 

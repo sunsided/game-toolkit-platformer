@@ -2,7 +2,14 @@
 
 All in `src/sim/`. Fixed step of 1/120 s, integer pixels with a sub-pixel remainder,
 moved one pixel at a time against 8 px tiles (`#` solid, `=` one-way platform,
-`*` dash crystal). The hitbox is 6x12.
+`*` dash crystal, `B` block). The hitbox is 6x12, blocks 12x12.
+
+## The demo level
+
+One screen, laid out around the debug overlay's corners: stairs of 3-tile steps (each
+within a plain held jump; `every_demo_stair_is_within_a_plain_jump` keeps it so) up to a
+tower, two chimneys in the middle for wall-jump bouncing (24 and 40 px inside), a low
+ceiling, a step to a ledge over the pit, a pillar to climb, crystals and two blocks.
 
 ## Step order
 
@@ -30,17 +37,21 @@ the feel: a buffered jump is checked before gravity, the landing after moving.
 | Dash | 8-way (or sideways only), gravity off, hands over part of its speed; down-dashes end on the ground; refilled by the ground (after a moment) or crystals | `dash*`, `crystal_respawn` |
 | Wall slide | pressing into a wall while falling caps the fall | `wall_slide_speed` |
 | Wall stick | pressing away from the wall slid down keeps the hero on it briefly (Super Meat Boy), so away + jump is a wall jump | `wall_stick_time` |
-| Wall jump | near a wall (or climbing and pushing away): jump away, stick locked away briefly | `wall_jump_*` |
+| Wall jump | near a wall (or climbing and pushing away). The stick aims it: toward the wall a small kick with a short lock that arcs back onto the same wall (chained, it scales the wall, as in Hollow Knight and Super Meat Boy), away the full leap, neutral in between; up and down tilt it ±`wall_jump_aim` | `wall_jump_*`, `wall_climb_*` |
 | Climb | grab a wall: climb up/down at a stamina cost, hop over the top; climb jump straight up | `grab`, `climb_*`, `stamina` |
 | Grip | holding still: a firm grip holds, a slipping one slides; a tired grip (low stamina) slips and can't climb | `slip_speed`, `tired_*` |
 | Dive | in the air: a short hang, then straight down; the impact costs a moment of control | `dive`, `dive_*` |
+| Blocks | walking into a resting block pushes it (slowly); grab facing it holds it, walking away pulls it; blocks fall, stack, and can be stood on | `push`, `push_speed`, `pull_speed` |
+| Look | holding up or down while standing still (no movement) | |
 
 "Diving" is the Hollow Knight downward plunge here; swimming is a different feature (see
 the [roadmap](roadmap.md)).
 
 ## Tuning
 
-`Tuning` holds every number and ability switch; px and seconds. Abilities are off with a
+`Tuning` holds every number and ability switch; px and seconds. One field is
+presentation, not movement: `wings` tells the hero's animation driver to show air jumps as
+wings rather than a flip. Abilities are off with a
 zero count (`air_jumps`, `dashes`), a false flag (`grab`, `dive`, `dash_eight_way`) or an
 unreachable drop (`roll_drop`, `hard_land_drop`).
 
@@ -52,7 +63,7 @@ unreachable drop (`roll_drop`, `hard_land_drop`).
 |---|---|
 | hybrid | everything on (default) |
 | celeste-like | no air jump, no cut, no dive, no roll; climb, 8-way dash |
-| hollow-knight-like | instant run, hard cut, double jump, sideways dash, cling-and-slide (no grab), dive, hard landings |
+| hollow-knight-like | instant run, hard cut, double jump shown as wings, sideways dash, cling-and-slide (no grab), dive, hard landings |
 | meat-boy-like | fast momentum run, strong wall jumps, wall stick; no dash, no double, no climb |
 
 These lean toward each game's feel; they are not measured copies of it.
