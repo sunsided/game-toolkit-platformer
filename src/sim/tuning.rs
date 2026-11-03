@@ -13,7 +13,7 @@ pub enum Preset {
     /// Precise and floaty: 8-way dash, climbing with stamina, no air jump, no cut.
     Celeste,
     /// Snappy: instant run, hard jump cut, double jump, horizontal dash, wall cling that
-    /// slips, dive, hard landings.
+    /// slips, dive, super dash, hard landings.
     HollowKnight,
     /// Fast and slippery: walk or hold to run, momentum, strong wall jumps, wall stick,
     /// nothing else.
@@ -69,6 +69,7 @@ impl Preset {
                 glide: false,
                 run_roll: false,
                 sprint: false,
+                super_dash: false,
                 ..base
             },
             Preset::HollowKnight => Tuning {
@@ -95,6 +96,7 @@ impl Preset {
             },
             Preset::Silksong => Tuning {
                 dive: false,
+                super_dash: false,
                 glide: true,
                 run_roll: false,
                 wings: false,
@@ -129,6 +131,7 @@ impl Preset {
                 hard_land_drop: never,
                 glide: false,
                 run_roll: false,
+                super_dash: false,
                 ..base
             },
         }
@@ -272,6 +275,16 @@ pub struct Tuning {
     /// Terminal falling speed gliding.
     pub glide_fall_speed: f32,
 
+    /// Super dash (Hollow Knight's Crystal Heart): hold to charge on the ground or on a
+    /// wall, release when charged to fly straight and level until a wall or a cancel.
+    pub super_dash: bool,
+    /// Seconds to charge it.
+    pub super_charge: f32,
+    /// Flying speed.
+    pub super_speed: f32,
+    /// Horizontal speed kept when the flight is cancelled (jump or the button again).
+    pub super_cancel_speed: f32,
+
     /// Tapping down while running at speed rolls.
     pub run_roll: bool,
     /// Horizontal speed needed for a roll from a run.
@@ -385,6 +398,11 @@ impl Default for Tuning {
 
             glide: true,
             glide_fall_speed: 30.0,
+
+            super_dash: true,
+            super_charge: 0.8,
+            super_speed: 280.0,
+            super_cancel_speed: 90.0,
 
             run_roll: true,
             run_roll_speed: 100.0,

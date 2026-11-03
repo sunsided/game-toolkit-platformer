@@ -18,6 +18,7 @@ mod dash;
 mod dive;
 mod jump;
 mod land;
+mod super_dash;
 
 use super::{Event, Intent, JumpKind, Level, Rect, TILE, Tuning};
 
@@ -78,6 +79,18 @@ pub enum Mode {
     Dive {
         /// Seconds since the dive started.
         t: f32,
+    },
+    /// Charging a super dash, standing (`wall` 0) or holding on to the wall on side `wall`.
+    SuperCharge {
+        /// Seconds charged.
+        t: f32,
+        /// Side of the wall held, or 0 on the ground.
+        wall: i32,
+    },
+    /// Flying a super dash: straight and level until a wall or a cancel.
+    SuperDash {
+        /// Direction, -1 or 1.
+        dir: i32,
     },
     /// Recovering from a dive's impact.
     DiveLand {
@@ -156,6 +169,8 @@ pub struct Player {
     pub gliding: bool,
     /// Down was held last step, to see a fresh tap.
     was_down: bool,
+    /// Super dash was held last step, to see a fresh press.
+    was_super: bool,
     /// Highest (smallest) `y` of this airtime, for the drop height on landing.
     pub peak_y: i32,
 }
@@ -199,6 +214,7 @@ impl Player {
             glide_armed: false,
             gliding: false,
             was_down: false,
+            was_super: false,
             peak_y: y,
         }
     }
@@ -231,6 +247,7 @@ impl Player {
         self.try_dive(i, t, ev);
         self.dive_motion(t);
         self.climb(level, i, t, dt, ev);
+        self.super_dash(level, i, t, ev);
         self.run(level, move_x, t.sprint && i.sprint, t, dt);
         let airborne = !self.grounded && self.coyote <= 0.0;
         let before = ev.len();
@@ -255,6 +272,9 @@ impl Player {
         let landing_vy = self.vy;
         if self.move_x(level, self.vx * dt) {
             self.vx = 0.0;
+            if let Mode::SuperDash { dir } = self.mode {
+                self.super_bonk(dir, ev);
+            }
             if matches!(self.mode, Mode::Roll { .. }) {
                 self.mode = Mode::Normal;
                 ev.push(Event::RollEnded);
@@ -374,9 +394,17 @@ impl Player {
         | Mode::HardLand { t: x }
         | Mode::Dash { t: x, .. }
         | Mode::Dive { t: x }
-        | Mode::DiveLand { t: x } = &mut self.mode
+        | Mode::DiveLand { t: x }
+        | Mode::SuperCharge { t: x, .. } = &mut self.mode
         {
+            let before = *x;
             *x += dt;
+            if matches!(self.mode, Mode::SuperCharge { .. })
+                && before < t.super_charge
+                && self.mode_time() >= t.super_charge
+            {
+                ev.push(Event::SuperCharged);
+            }
         }
         let time = self.mode_time();
         match self.mode {
@@ -403,8 +431,9 @@ impl Player {
     /// Seconds in the current timed mode (0 for untimed ones).
     pub fn mode_time(&self) -> f32 {
         match self.mode {
-            Mode::Normal | Mode::Climb => 0.0,
-            Mode::Roll { t }
+            Mode::Normal | Mode::Climb | Mode::SuperDash { .. } => 0.0,
+            Mode::SuperCharge { t, .. }
+            | Mode::Roll { t }
             | Mode::HardLand { t }
             | Mode::Dash { t, .. }
             | Mode::Dive { t }
@@ -434,7 +463,11 @@ impl Player {
             Mode::HardLand { .. } | Mode::DiveLand { .. } => {
                 self.vx = approach(self.vx, 0.0, t.run_decel * dt);
             }
-            Mode::Dash { .. } | Mode::Dive { .. } | Mode::Climb => {}
+            Mode::Dash { .. }
+            | Mode::Dive { .. }
+            | Mode::Climb
+            | Mode::SuperCharge { .. }
+            | Mode::SuperDash { .. } => {}
             Mode::Normal => {
                 let top = match self.shove {
                     Shove::None if sprint => t.sprint_speed,

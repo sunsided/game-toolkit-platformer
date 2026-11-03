@@ -21,6 +21,8 @@ pub struct Intent {
     pub dive_pressed: bool,
     /// Sprint is held: a higher top speed.
     pub sprint: bool,
+    /// Super dash is held: charge it (on the ground or a wall); release to launch.
+    pub super_dash: bool,
 }
 
 impl Intent {

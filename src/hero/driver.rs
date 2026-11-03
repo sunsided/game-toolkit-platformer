@@ -32,6 +32,16 @@ pub struct HeroDriver {
     holding: ParamId,
     /// `gliding`
     gliding: ParamId,
+    /// `super_bonk`
+    super_bonk: ParamId,
+    /// `super_launch`
+    super_launch: ParamId,
+    /// `super_flying`
+    super_flying: ParamId,
+    /// `charged`
+    charged: ParamId,
+    /// `charging`
+    charging: ParamId,
     /// `speed`
     speed: ParamId,
     /// `vy`
@@ -92,6 +102,11 @@ impl HeroDriver {
             pulling: id("pulling"),
             holding: id("holding"),
             gliding: id("gliding"),
+            super_bonk: id("super_bonk"),
+            super_launch: id("super_launch"),
+            super_flying: id("super_flying"),
+            charged: id("charged"),
+            charging: id("charging"),
             speed: id("speed"),
             vy: id("vy"),
             dash_y: id("dash_y"),
@@ -135,6 +150,16 @@ impl Driver<World> for HeroDriver {
         p.set_bool(self.pulling, matches!(pl.shove, Shove::Pull { .. }));
         p.set_bool(self.holding, matches!(pl.shove, Shove::Hold { .. }));
         p.set_bool(self.gliding, pl.gliding);
+        let charge = match pl.mode {
+            Mode::SuperCharge { t, .. } => Some(t),
+            _ => None,
+        };
+        p.set_bool(self.charging, charge.is_some());
+        p.set_bool(
+            self.charged,
+            charge.is_some_and(|t| t >= w.tuning.super_charge),
+        );
+        p.set_bool(self.super_flying, matches!(pl.mode, Mode::SuperDash { .. }));
         // Signed seconds held: negative looking up, positive looking down.
         p.set_float(self.look, pl.look as f32 * pl.look_time);
         p.set_float(self.speed, pl.vx.abs());
@@ -162,6 +187,8 @@ impl Driver<World> for HeroDriver {
                 Event::DroppedThrough => self.drop,
                 Event::DiveStarted => self.dive,
                 Event::DiveImpact { .. } => self.impact,
+                Event::SuperDashStarted { .. } => self.super_launch,
+                Event::SuperDashEnded { bonk: true } => self.super_bonk,
                 _ => continue,
             };
             p.fire(t);

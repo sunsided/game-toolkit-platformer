@@ -16,6 +16,7 @@
 //!   double (flip) or wings, wall_jump, hop, drop: one-shots into rise / fall
 //!   any -> roll | hard_land | dash_{side,up,down} | climb <-> grip_slip | wall_slide
 //!   any -> dive_windup -> dive -> dive_land
+//!   any -> super_charge -> super_ready -> super_dash -> super_bonk -> fall
 //! ```
 
 use std::sync::Arc;
@@ -124,6 +125,9 @@ pub fn spec() -> GraphSpec {
         .bool("pulling")
         .bool("holding")
         .bool("gliding")
+        .bool("charging")
+        .bool("charged")
+        .bool("super_flying")
         .float("speed")
         .float("vy")
         .float("dash_y")
@@ -141,6 +145,8 @@ pub fn spec() -> GraphSpec {
         .trigger("grab", 0.05)
         .trigger("dive", 0.05)
         .trigger("impact", 0.0)
+        .trigger("super_launch", 0.0)
+        .trigger("super_bonk", 0.0)
         // Standing.
         .state(StateSpec::new(
             "idle",
@@ -246,6 +252,11 @@ pub fn spec() -> GraphSpec {
         .state(StateSpec::new("climb", looping(&s::CLIMB, 0.12)).rate_by("vy", 45.0, 0.0, 2.0))
         .state(StateSpec::new("grip_slip", looping(&s::WALL_SLIDE, 0.12)))
         .state(StateSpec::new("wall_slide", looping(&s::WALL_SLIDE, 0.08)))
+        // Super dash.
+        .state(StateSpec::new("super_charge", looping(&s::CHARGE, 0.1)))
+        .state(StateSpec::new("super_ready", looping(&s::CHARGED, 0.05)))
+        .state(StateSpec::new("super_dash", looping(&s::SUPER, 0.03)))
+        .state(StateSpec::new("super_bonk", once(&[(s::SUPER_BONK, 0.25)])).then("fall"))
         // Dive.
         .state(StateSpec::new("dive_windup", once(&[(s::DIVE_WINDUP, 0.08)])).then("dive"))
         .state(StateSpec::new("dive", looping(&s::DIVE, 0.04)))
@@ -258,6 +269,25 @@ pub fn spec() -> GraphSpec {
             .then("idle"),
         )
         // Events, from anywhere, highest first.
+        .transition(
+            TransitionSpec::any("super_bonk", trig("super_bonk"))
+                .priority(99)
+                .breaks_lock(),
+        )
+        .transition(
+            TransitionSpec::any("super_dash", trig("super_launch"))
+                .priority(98)
+                .breaks_lock(),
+        )
+        .transition(
+            TransitionSpec::any("super_charge", is("charging").and(not("charged")))
+                .except(["super_charge", "super_ready"])
+                .priority(92)
+                .breaks_lock(),
+        )
+        .transition(
+            TransitionSpec::new(["super_charge"], "super_ready", is("charged")).priority(93),
+        )
         .transition(
             TransitionSpec::any("dive_land", trig("impact"))
                 .priority(100)
@@ -386,6 +416,23 @@ pub fn spec() -> GraphSpec {
                 .breaks_lock(),
         )
         .transition(TransitionSpec::new(["glide"], "fall", not("gliding")).priority(45))
+        // Out of a super dash (let go early, jumped, cancelled).
+        .transition(
+            TransitionSpec::new(
+                ["super_charge", "super_ready", "super_dash"],
+                "idle",
+                not("charging").and(not("super_flying")).and(is("grounded")),
+            )
+            .priority(51),
+        )
+        .transition(
+            TransitionSpec::new(
+                ["super_charge", "super_ready", "super_dash"],
+                "fall",
+                not("charging").and(not("super_flying")),
+            )
+            .priority(50),
+        )
         // Walls.
         .transition(
             TransitionSpec::new(["rise", "apex", "fall"], "wall_slide", is("wall_slide"))

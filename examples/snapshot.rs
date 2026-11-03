@@ -56,6 +56,7 @@ const RIGHT: Intent = Intent {
     grab: false,
     dive_pressed: false,
     sprint: false,
+    super_dash: false,
 };
 
 /// The side (-1, 1) of a wall within 2 px, or 0.
@@ -150,6 +151,27 @@ const SCRIPTS: &[Script] = &[
             move_x: 1.0,
             sprint: true,
             move_y: if k == 40 { 1.0 } else { 0.0 },
+            ..Intent::default()
+        },
+    },
+    Script {
+        name: "super-dash",
+        preset: None,
+        at: None,
+        steps: 260,
+        intent: |k, _| Intent {
+            super_dash: (5..115).contains(&k),
+            ..Intent::default()
+        },
+    },
+    Script {
+        name: "wall-super-dash",
+        preset: None,
+        at: Some((14 * TILE - player::W, 11 * TILE)),
+        steps: 220,
+        intent: |k, _| Intent {
+            move_x: if k < 30 { 1.0 } else { 0.0 },
+            super_dash: (30..135).contains(&k),
             ..Intent::default()
         },
     },

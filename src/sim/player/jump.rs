@@ -20,9 +20,13 @@ impl Player {
         ev: &mut Vec<Event>,
     ) -> bool {
         let able = match self.mode {
-            Mode::Normal | Mode::Climb | Mode::Dash { .. } => true,
+            // Jumping cancels a super dash charge.
+            Mode::Normal | Mode::Climb | Mode::Dash { .. } | Mode::SuperCharge { .. } => true,
             Mode::Roll { t: rt } => rt >= t.roll_jump_after,
-            Mode::HardLand { .. } | Mode::Dive { .. } | Mode::DiveLand { .. } => false,
+            Mode::HardLand { .. }
+            | Mode::Dive { .. }
+            | Mode::DiveLand { .. }
+            | Mode::SuperDash { .. } => false,
         };
         if self.buffer <= 0.0 || !able {
             return false;
@@ -70,10 +74,10 @@ impl Player {
                 }
             }
             JumpKind::Wall => {
-                let side = if self.mode == Mode::Climb {
-                    self.facing
-                } else {
-                    wall.unwrap_or(self.facing)
+                let side = match self.mode {
+                    Mode::Climb => self.facing,
+                    Mode::SuperCharge { wall: w, .. } if w != 0 => w,
+                    _ => wall.unwrap_or(self.facing),
                 };
                 // The stick aims the jump. Sideways: toward the wall is a small kick
                 // that arcs back onto the same wall higher up (chained, it scales the

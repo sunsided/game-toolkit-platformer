@@ -42,6 +42,8 @@ through bools and floats.
 - Air: `takeoff` → `rise` → `apex` → `fall`; one-shots `double` (locked flip) or `wings`
   (chosen by the `wings` bool: the same trigger, two looks), `wall_jump`, `hop`, `drop`;
   `glide` (any air state while `gliding`).
+- Super dash: `super_charge` → `super_ready` (once `charged`) → `super_dash` (on the
+  `super_launch` trigger) → `super_bonk` (on a wall) → `fall`.
 - Dashes: `dash_side`, `dash_up`, `dash_down`, chosen by `dash_y`.
 - Walls: `climb` (rate by vertical speed) ↔ `grip_slip`, `wall_slide`.
 - Dive: `dive_windup` → `dive` → `dive_land` (locked).

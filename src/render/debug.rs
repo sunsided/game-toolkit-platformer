@@ -78,6 +78,8 @@ fn mode(m: Mode) -> &'static str {
         Mode::Climb => "CLIMB",
         Mode::Dive { .. } => "DIVE",
         Mode::DiveLand { .. } => "IMPACT",
+        Mode::SuperCharge { .. } => "CHARGE",
+        Mode::SuperDash { .. } => "SUPER",
     }
 }
 
@@ -177,8 +179,8 @@ fn keys(p: Option<Preset>) -> &'static str {
         Some(Preset::Celeste) => "C JUMP X DASH Z GRAB",
         Some(Preset::MeatBoy) => "SPACE JUMP SHIFT RUN",
         Some(Preset::Silksong) => "Z JUMP, HOLD: GLIDE C DASH",
-        Some(Preset::HollowKnight) => "Z JUMP C DASH DN+A DIVE",
-        _ => "Z JUMP C DASH S GRAB DN+A DIVE SHIFT SPRINT",
+        Some(Preset::HollowKnight) => "Z JUMP C DASH S SUPER DN+A DIVE",
+        _ => "Z JUMP C DASH S SUPER D GRAB DN+A DIVE SHIFT SPRINT",
     }
 }
 

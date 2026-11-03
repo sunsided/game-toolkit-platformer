@@ -71,6 +71,14 @@ fn pose(sprite: u16) -> Pose {
             ..p(7.0, 11.0, -20.0, g)
         },
         s::BOX_HOLD => p(7.0, 11.0, 6.0, g),
+        71 | 72 => Pose {
+            dy: -(((sprite - 71) % 2) as f32),
+            ..p(8.0, 9.0, 8.0, pal::YELLOW)
+        },
+        73 => p(9.0, 8.0, 10.0, pal::WHITE),
+        74 => p(9.0, 8.0, 10.0, pal::YELLOW),
+        75 | 76 => p(13.0 + (sprite - 75) as f32, 7.0, 0.0, pal::YELLOW),
+        s::SUPER_BONK => p(7.0, 10.0, -25.0, r),
         67 | 69 => p(8.0, 10.0, 20.0, g),
         68 | 70 => Pose {
             dy: -1.0,

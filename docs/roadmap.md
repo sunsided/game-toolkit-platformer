@@ -17,6 +17,7 @@
 - [x] Walls refill air jumps (and dashes per preset); blocks with weight and rumble
 - [x] Control schemes per preset; Silksong-like preset with glide; run-and-roll
 - [x] Sprint button (Super Meat Boy's run)
+- [x] Super dash (Crystal Heart); gamepad triggers read as axes too
 
 ## Next
 
@@ -34,6 +35,5 @@
 - [ ] Camera with look-ahead and larger levels (looking up/down pans it, as in Hollow
   Knight)
 - [ ] Carrying blocks, throwing them
-- [ ] Super dash (Crystal Heart: charge on the ground or a wall, fly straight until
-  stopped); Silksong's controls
+- [ ] Silksong's own controls
 - [ ] WASM build

@@ -83,5 +83,13 @@ pub const BOX_HOLD: u16 = 64;
 pub const GLIDE: [u16; 2] = [65, 66];
 /// Sprint cycle: longer strides, leaning further in.
 pub const SPRINT: [u16; 4] = [67, 68, 69, 70];
+/// Charging a super dash: crouched, gathering crystal light.
+pub const CHARGE: [u16; 2] = [71, 72];
+/// Fully charged, flashing: let go to launch.
+pub const CHARGED: [u16; 2] = [73, 74];
+/// Flying a super dash, stretched flat.
+pub const SUPER: [u16; 2] = [75, 76];
+/// The super dash hit a wall.
+pub const SUPER_BONK: u16 = 77;
 /// Number of sprites.
-pub const COUNT: u16 = 71;
+pub const COUNT: u16 = 78;

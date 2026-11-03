@@ -75,6 +75,18 @@ pub enum Event {
     StaminaOut,
     /// A dive started: a short hang, then straight down.
     DiveStarted,
+    /// The super dash finished charging: release to launch.
+    SuperCharged,
+    /// The super dash launched.
+    SuperDashStarted {
+        /// Direction, -1 or 1.
+        dir: i32,
+    },
+    /// The super dash is over.
+    SuperDashEnded {
+        /// It hit a wall (otherwise it was cancelled).
+        bonk: bool,
+    },
     /// The cloak opened: gliding.
     GlideStarted,
     /// The glide is over (jump released, landed, a wall, a dash).

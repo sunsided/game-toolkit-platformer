@@ -42,6 +42,7 @@ the feel: a buffered jump is checked before gravity, the landing after moving.
 | Climb | grab a wall: climb up/down at a stamina cost, hop over the top; climb jump straight up | `grab`, `climb_*`, `stamina` |
 | Grip | holding still: a firm grip holds, a slipping one slides; a tired grip (low stamina) slips and can't climb | `slip_speed`, `tired_*` |
 | Dive | in the air: a short hang, then straight down; the impact costs a moment of control | `dive`, `dive_*` |
+| Super dash | Crystal Heart: hold the button on the ground or on a wall (sliding or climbing) to charge; released once charged, the hero flies straight and level, gravity off, away from a wall it charged on, until a wall (a bonk: knocked back, falling) or a cancel (jump or the button; keeps `super_cancel_speed`). Released early or jumped out of, the charge does nothing | `super_dash`, `super_*` |
 | Glide | a jump pressed in the air (not off a wall) and held opens a cloak once falling: the fall is capped at a slow drift. The press spends the air jump first if one is left, as in Silksong (Faydown Cloak, then Drifter's Cloak) | `glide`, `glide_fall_speed` |
 | Sprint | holding sprint raises the top speed; the extra speed carries into jumps (it only bleeds off slowly) | `sprint`, `sprint_speed` |
 | Run-and-roll | a fresh tap of down while faster than walking (sprinting) on the ground rolls, like a landing roll | `run_roll`, `run_roll_speed` |
@@ -68,7 +69,7 @@ unreachable drop (`roll_drop`, `hard_land_drop`).
 |---|---|
 | hybrid | everything on (default) |
 | celeste-like | no air jump, no cut, no dive, no roll; climb, 8-way dash |
-| hollow-knight-like | instant run, hard cut, double jump shown as wings, sideways dash, cling-and-slide (no grab), dive, hard landings |
+| hollow-knight-like | instant run, hard cut, double jump shown as wings, sideways dash, super dash, cling-and-slide (no grab), dive, hard landings |
 | silksong-like | Hollow Knight's feel with a glide after the double jump (flip, not wings); no dive |
 | meat-boy-like | walk, hold to run (fast, momentum), strong wall jumps, wall stick; no dash, no double, no climb |
 

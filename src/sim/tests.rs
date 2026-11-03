@@ -1349,3 +1349,90 @@ fn sprinting_raises_the_top_speed_where_the_preset_has_it() {
     let hk = Preset::HollowKnight.tuning();
     assert_eq!(top(hk, true), top(hk, false), "no sprint in Hollow Knight");
 }
+
+/// Hold super dash for `steps` steps, then let go; the events.
+fn charge(w: &mut World, steps: usize) -> Vec<Event> {
+    let mut ev = run(
+        w,
+        Intent {
+            super_dash: true,
+            ..Intent::default()
+        },
+        steps,
+    );
+    ev.extend(run(w, Intent::default(), 1));
+    ev
+}
+
+#[test]
+fn a_charged_super_dash_flies_level_until_a_wall() {
+    let mut w = world(room(&[]));
+    w.player.x = 3 * TILE;
+    run(&mut w, Intent::default(), 3);
+    let ev = charge(&mut w, 110);
+    assert!(ev.contains(&Event::SuperCharged));
+    assert!(ev.contains(&Event::SuperDashStarted { dir: 1 }), "{ev:?}");
+    let y = w.player.y;
+    let mut ev = Vec::new();
+    for _ in 0..120 {
+        w.step(&Intent::default());
+        ev.extend(w.events.iter().copied());
+        if matches!(w.player.mode, Mode::SuperDash { .. }) {
+            assert_eq!(w.player.y, y, "level flight");
+            assert!(w.player.vx > 250.0);
+        }
+    }
+    assert!(ev.contains(&Event::SuperDashEnded { bonk: true }), "{ev:?}");
+    assert!(w.player.x > 18 * TILE, "flew across the room");
+}
+
+#[test]
+fn letting_go_early_does_nothing_and_jump_cancels_the_flight() {
+    let mut w = world(room(&[]));
+    run(&mut w, Intent::default(), 3);
+    let ev = charge(&mut w, 40);
+    assert!(
+        !ev.iter()
+            .any(|e| matches!(e, Event::SuperDashStarted { .. }))
+    );
+    assert_eq!(w.player.mode, Mode::Normal);
+    charge(&mut w, 110);
+    run(&mut w, Intent::default(), 10);
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            jump_held: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert!(ev.contains(&Event::SuperDashEnded { bonk: false }));
+    assert!(jumps(&ev).is_empty(), "the press cancels, it doesn't jump");
+    assert_eq!(w.player.mode, Mode::Normal);
+}
+
+#[test]
+fn a_super_dash_charged_on_a_wall_launches_away_from_it() {
+    let mut w = at_wall(1..15, 5 * TILE, Tuning::default());
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        20,
+    );
+    assert_eq!(w.player.wall_slide, 1);
+    let y = w.player.y;
+    let ev = charge(&mut w, 110);
+    assert!(ev.contains(&Event::SuperDashStarted { dir: -1 }), "{ev:?}");
+    assert!(w.player.y - y <= 2, "held on the wall while charging");
+    let mut w = World::new(room(&[]), Preset::Celeste.tuning());
+    run(&mut w, Intent::default(), 3);
+    let ev = charge(&mut w, 110);
+    assert!(
+        !ev.contains(&Event::SuperCharged),
+        "no Crystal Heart in Celeste"
+    );
+}

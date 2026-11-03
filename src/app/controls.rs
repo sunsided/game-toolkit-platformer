@@ -8,13 +8,16 @@
 //! |---|---|---|---|
 //! | jump | Z, Space / A | C, Space / A, Y | Space, Z / A |
 //! | dash | C / RT | X / X, B | - |
-//! | grab (hold) | S / LT, LB | Z / RT, LT, RB, LB | - |
+//! | super dash (hold) | S / LT | - | - |
+//! | grab (hold) | D / LB | Z / RT, LT, RB, LB | - |
 //! | dive | down + A / down + B, down + RB | - | - |
-//! | sprint (hold) | Shift / X (hybrid only) | - | Shift, X / X, RT |
+//! | sprint (hold) | Shift / X | - | Shift, X / X, RT |
 //!
-//! Hollow Knight has no grab, so it takes the super-dash slot; its dive is down + cast, as
-//! Desolate Dive is. Sprint is Super Meat Boy's run button; of the others only the hybrid
-//! tuning has a sprint.
+//! Hollow Knight's own slots: dash RT, super dash (Crystal Heart) LT, dive down + cast.
+//! Grab, which it doesn't have, takes the dream nail's keyboard key (D) and the left
+//! bumper. Sprint is Super Meat Boy's run button. Silksong's own layout isn't modeled.
+//!
+//! Triggers count when the pad reports them as buttons or only as an analog axis (Z).
 
 use game_toolkit::prelude::*;
 
@@ -47,23 +50,29 @@ pub struct Scheme {
     pub sprint: &'static [Key],
     /// Sprint buttons (held).
     pub sprint_pad: &'static [Button],
+    /// Super dash keys (held).
+    pub super_dash: &'static [Key],
+    /// Super dash buttons (held).
+    pub super_dash_pad: &'static [Button],
 }
 
 // gilrs names: RightTrigger2 / LeftTrigger2 are the triggers, RightTrigger / LeftTrigger
 // the bumpers; South, East, West, North are A, B, X, Y.
 
-/// Hollow Knight's defaults, grab in the super-dash slot. Also the hybrid's.
+/// Hollow Knight's defaults plus grab and sprint. Also the hybrid's and Silksong's.
 const HOLLOW_KNIGHT: Scheme = Scheme {
     jump: &[Key::KeyZ, Key::Space],
     jump_pad: &[Button::South],
     dash: &[Key::KeyC],
     dash_pad: &[Button::RightTrigger2],
-    grab: &[Key::KeyS],
-    grab_pad: &[Button::LeftTrigger2, Button::LeftTrigger],
+    grab: &[Key::KeyD],
+    grab_pad: &[Button::LeftTrigger],
     cast: &[Key::KeyA],
     cast_pad: &[Button::East, Button::RightTrigger],
     sprint: &[Key::ShiftLeft, Key::ShiftRight],
     sprint_pad: &[Button::West],
+    super_dash: &[Key::KeyS],
+    super_dash_pad: &[Button::LeftTrigger2],
 };
 
 /// Celeste's defaults.
@@ -83,6 +92,8 @@ const CELESTE: Scheme = Scheme {
     cast_pad: &[],
     sprint: &[],
     sprint_pad: &[],
+    super_dash: &[],
+    super_dash_pad: &[],
 };
 
 /// Super Meat Boy: jump, and hold to run.
@@ -97,6 +108,8 @@ const MEAT_BOY: Scheme = Scheme {
     cast_pad: &[],
     sprint: &[Key::ShiftLeft, Key::ShiftRight, Key::KeyX],
     sprint_pad: &[Button::West, Button::RightTrigger2],
+    super_dash: &[],
+    super_dash_pad: &[],
 };
 
 impl Scheme {
@@ -111,8 +124,21 @@ impl Scheme {
     }
 }
 
+/// Trigger state from the last frame, to see presses of triggers that only report an
+/// analog axis.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Triggers {
+    /// Left trigger was down.
+    left: bool,
+    /// Right trigger was down.
+    right: bool,
+}
+
+/// A trigger counts as down past this.
+const TRIGGER: f32 = 0.5;
+
 /// Read this frame's intent from the keyboard and the first gamepad, through `scheme`.
-pub fn read_intent(input: &Input, scheme: &Scheme) -> Intent {
+pub fn read_intent(input: &Input, scheme: &Scheme, triggers: &mut Triggers) -> Intent {
     let pressed = |ks: &[Key]| ks.iter().any(|&k| input.key_pressed(k));
     let held = |ks: &[Key]| ks.iter().any(|&k| input.key_held(k));
     let axis =
@@ -126,11 +152,30 @@ pub fn read_intent(input: &Input, scheme: &Scheme) -> Intent {
         grab: held(scheme.grab),
         dive_pressed: false,
         sprint: held(scheme.sprint),
+        super_dash: held(scheme.super_dash),
     };
     let mut cast = pressed(scheme.cast);
     if let Some(g) = input.first_gamepad() {
-        let pressed = |bs: &[Button]| bs.iter().any(|&b| g.button_pressed(b));
-        let held = |bs: &[Button]| bs.iter().any(|&b| g.button_held(b));
+        // Triggers: as buttons, or as the Z axes some pads report instead.
+        let lt = g.button_held(Button::LeftTrigger2) || g.axis(Axis::LeftZ) > TRIGGER;
+        let rt = g.button_held(Button::RightTrigger2) || g.axis(Axis::RightZ) > TRIGGER;
+        let (lt_pressed, rt_pressed) = (lt && !triggers.left, rt && !triggers.right);
+        *triggers = Triggers {
+            left: lt,
+            right: rt,
+        };
+        let held_b = |b: Button| match b {
+            Button::LeftTrigger2 => lt,
+            Button::RightTrigger2 => rt,
+            _ => g.button_held(b),
+        };
+        let pressed_b = |b: Button| match b {
+            Button::LeftTrigger2 => lt_pressed,
+            Button::RightTrigger2 => rt_pressed,
+            _ => g.button_pressed(b),
+        };
+        let pressed = |bs: &[Button]| bs.iter().any(|&b| pressed_b(b));
+        let held = |bs: &[Button]| bs.iter().any(|&b| held_b(b));
         let dz = |v: f32| if v.abs() < DEADZONE { 0.0 } else { v };
         let dpad = |neg, pos| (g.button_held(pos) as i32 - g.button_held(neg) as i32) as f32;
         let sx = dz(g.axis(Axis::LeftStickX)) + dpad(Button::DPadLeft, Button::DPadRight);
@@ -146,8 +191,9 @@ pub fn read_intent(input: &Input, scheme: &Scheme) -> Intent {
         i.jump_held |= held(scheme.jump_pad);
         i.dash_pressed |= pressed(scheme.dash_pad);
         i.grab |= held(scheme.grab_pad);
-        cast |= pressed(scheme.cast_pad);
         i.sprint |= held(scheme.sprint_pad);
+        i.super_dash |= held(scheme.super_dash_pad);
+        cast |= pressed(scheme.cast_pad);
     }
     i.dive_pressed = cast && i.down();
     i

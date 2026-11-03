@@ -15,7 +15,7 @@ use game_toolkit::prelude::*;
 use crate::gfx::{DrawList, H, W};
 use crate::render;
 use crate::session::Session;
-use controls::{Scheme, read_intent, read_keys};
+use controls::{Scheme, Triggers, read_intent, read_keys};
 use screenshots::Screenshots;
 use viewport::Viewport;
 
@@ -45,6 +45,8 @@ pub struct App {
     clock: f32,
     /// F12 and command-line screenshots.
     shots: Screenshots,
+    /// The gamepad triggers last frame.
+    triggers: Triggers,
 }
 
 impl App {
@@ -91,6 +93,7 @@ impl Game for App {
                 auto: SCREENSHOT.get().cloned(),
                 ..Screenshots::default()
             },
+            triggers: Triggers::default(),
         })
     }
 
@@ -102,7 +105,7 @@ impl Game for App {
             ctx.quit();
         }
         let scheme = Scheme::of(self.session.preset);
-        let intent = read_intent(&ctx.input, &scheme);
+        let intent = read_intent(&ctx.input, &scheme, &mut self.triggers);
         self.session.update(dt, intent, &read_keys(&ctx.input));
     }
 

@@ -195,11 +195,24 @@ impl Session {
                     self.fx.push(dust(cx, feet, 6.0 + drop as f32 / 8.0));
                 }
                 Event::RollStarted | Event::HardLanded => self.fx.push(dust(cx, feet, 12.0)),
+                Event::SuperCharged => self.fx.push(ring(cx, mid, 10.0, 0.25, FxColor::Impact)),
+                Event::SuperDashStarted { .. } => {
+                    self.fx.push(ring(cx, mid, 18.0, 0.3, FxColor::Impact));
+                    self.fx.push(dust(cx, feet, 14.0));
+                }
+                Event::SuperDashEnded { bonk: true } => {
+                    self.fx.push(ring(cx, mid, 12.0, 0.25, FxColor::Air));
+                }
                 _ => {}
             }
             self.log.push_back((tick, format!("{e:?}")));
         }
-        if matches!(p.mode, Mode::Dash { .. }) && tick.is_multiple_of(3) {
+        let streak = match p.mode {
+            Mode::Dash { .. } => 3,
+            Mode::SuperDash { .. } => 2,
+            _ => 0,
+        };
+        if streak > 0 && tick.is_multiple_of(streak) {
             let (x, y) = p.exact_pos();
             self.fx.push(Fx::Ghost {
                 x,

@@ -20,12 +20,14 @@ preset (F2 cycles them, the overlay's bottom-right corner shows the keys):
 |---|---|---|---|
 | jump (hold for height) | Z, Space / A | C, Space / A, Y | Space, Z / A |
 | dash | C / RT | X / X, B | |
-| grab (hold) | S / LT, LB | Z / RT, LT, RB, LB | |
+| super dash (hold, release) | S / LT | | |
+| grab (hold) | D / LB | Z / RT, LT, RB, LB | |
 | dive | down + A / down + B, down + RB | | |
-| sprint / run (hold) | Shift / X (hybrid only) | | Shift, X / X, RT |
+| sprint / run (hold) | Shift / X | | Shift, X / X, RT |
 
-Keyboard / gamepad (Xbox names). Hollow Knight has no grab, so it takes the super-dash
-slot; its dive is down + cast, as Desolate Dive is.
+Keyboard / gamepad (Xbox names). Hollow Knight's own slots are dash on RT, super dash
+(Crystal Heart) on LT and the dive as down + cast (Desolate Dive); grab, which it doesn't
+have, is on D and LB. Triggers work whether the pad reports them as buttons or as axes.
 
 ### How to
 
@@ -54,6 +56,11 @@ slot; its dive is down + cast, as Desolate Dive is.
 - **Climb**: hold grab against a wall; up and down climb, stamina runs out; climbing past
   the top hops over. A tired grip slips.
 - **Dive**: down + dive in the air: a short hang, then straight down.
+- **Super dash** (hybrid, Hollow Knight-like): hold the button standing, or while sliding
+  down or holding on to a wall, until the hero flashes (0.8 s), then let go: straight and
+  level at speed, over gaps, away from the wall it was charged on, until a wall stops it.
+  Jump or the button again cancels the flight; letting go early or jumping cancels the
+  charge.
 - **Drop through**: down + jump on a thin platform.
 - **Push and pull**: walk into a box to push it; it rumbles a moment before it budges.
   Hold grab facing it and walk away to pull it.
