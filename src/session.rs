@@ -19,12 +19,12 @@ pub use fx::{Fx, FxColor};
 /// Lines kept in the event log (the overlay's bottom-left corner).
 const LOG: usize = 6;
 
-/// How the hero is drawn.
+/// How the game is drawn (F3).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Skin {
-    /// The heroine of Cheesed.
+    /// The art: the heroine of Cheesed in the moonlit scene.
     Mouse,
-    /// Debug blocks, colored by kind of state.
+    /// Diagnosis: the hero as a block colored by kind of state, on a plain backdrop.
     Blocks,
 }
 
@@ -69,7 +69,7 @@ pub struct Keys {
     pub reset: bool,
     /// Switch to the next feel preset.
     pub preset: bool,
-    /// Switch the hero's look (mouse, debug blocks).
+    /// Switch between the art and the diagnostic look.
     pub skin: bool,
 }
 
@@ -99,7 +99,7 @@ pub struct Session {
     pub preset: Option<Preset>,
     /// The hero's simulated cape, tail, mane and headband ends.
     pub rig: Rig,
-    /// How the hero is drawn.
+    /// How the game is drawn.
     pub skin: Skin,
 }
 

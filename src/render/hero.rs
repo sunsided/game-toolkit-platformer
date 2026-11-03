@@ -1,6 +1,7 @@
 //! The debug look (F3): every hero sprite as a rotated block with an eye, colored by
 //! kind of state.
 
+use super::KF;
 use crate::gfx::{Raster, Rgb, palette as pal};
 use crate::hero::pose::pose;
 use crate::sim::player;
@@ -23,7 +24,13 @@ pub fn draw(
     let (ox, oy) = (cx, feet - pz.h / 2.0);
     let a = (pz.rot * f).to_radians();
     let (sin, cos) = a.sin_cos();
-    let rot = |lx: f32, ly: f32| (ox + lx * cos - ly * sin, oy + lx * sin + ly * cos);
+    // In units, then scaled to pixels.
+    let rot = |lx: f32, ly: f32| {
+        (
+            (ox + lx * cos - ly * sin) * KF,
+            (oy + lx * sin + ly * cos) * KF,
+        )
+    };
     let (hw, hh) = (pz.w / 2.0, pz.h / 2.0);
     let quad = [rot(-hw, -hh), rot(hw, -hh), rot(hw, hh), rot(-hw, hh)];
     let body = tint.unwrap_or(pz.c);
@@ -46,9 +53,9 @@ pub fn draw(
         for k in [0.0f32, 0.35] {
             let a = (-90.0 - f * (spread * (1.0 - k))).to_radians();
             let (bx, by) = rot(-f, -hh + 3.0);
-            let tip = (bx + a.cos() * 9.0, by + a.sin() * 9.0);
+            let tip = (bx + a.cos() * 9.0 * KF, by + a.sin() * 9.0 * KF);
             let a2 = a + f * 0.6;
-            let mid = (bx + a2.cos() * 6.0, by + a2.sin() * 6.0);
+            let mid = (bx + a2.cos() * 6.0 * KF, by + a2.sin() * 6.0 * KF);
             r.fill_polygon(&[(bx, by), tip, mid], pal::WHITE);
         }
     }

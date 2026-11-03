@@ -27,7 +27,8 @@ pub use draw_list::{DrawList, Span};
 pub use palette::Rgb;
 pub use raster::{Raster, bayer};
 
-/// Grid width in pixels: 48 tiles of 8 px. 16:9, so 1920x1080 is exactly 5x.
+/// Grid width in pixels: 48 tiles of 8 px, one pixel per simulation unit. 16:9, so
+/// 1920x1080 is exactly 5x.
 pub const W: i32 = 384;
 /// Grid height in pixels: 27 tiles of 8 px.
 pub const H: i32 = 216;

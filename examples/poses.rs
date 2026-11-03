@@ -7,7 +7,7 @@ use animation::gfx::font::{self, Font};
 use animation::gfx::{Canvas, Raster, palette as pal, png};
 use animation::hero::rig::Rig;
 use animation::hero::sprite::COUNT;
-use animation::render::mouse;
+use animation::render::{KF, Paint, mouse};
 
 /// Cell size in pixels.
 const CELL: i32 = 28;
@@ -27,7 +27,8 @@ fn main() {
         let (col, row) = (sprite as i32 % COLS, sprite as i32 / COLS);
         let (x0, y0) = (col * CELL, row * CELL);
         c.rect_outline(x0, y0, CELL, CELL, pal::STEEL);
-        let (x, y) = ((x0 + 13) as f32, (y0 + 12) as f32);
+        // Her hitbox's top-left in units, so that she stands in the cell's lower middle.
+        let (x, y) = ((x0 + 11) as f32 / KF, (y0 + 13) as f32 / KF);
         let mut rig = Rig::default();
         for _ in 0..240 {
             rig.step(x, y, sprite, 1, (0.0, 0.0), 1.0 / 120.0);
@@ -38,11 +39,8 @@ fn main() {
             y,
             sprite,
             1,
-            Some(&rig),
-            (0.0, 0.0),
-            false,
-            None,
-            1.0,
+            Some((&rig, (0.0, 0.0))),
+            &Paint::default(),
         );
         font::draw(
             &mut c,

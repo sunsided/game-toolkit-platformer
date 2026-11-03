@@ -14,7 +14,7 @@ use game_toolkit::prelude::*;
 
 use crate::gfx::{DrawList, H, W};
 use crate::render;
-use crate::session::Session;
+use crate::session::{Session, Skin};
 use controls::{Scheme, Triggers, read_intent, read_keys};
 use screenshots::Screenshots;
 use viewport::Viewport;
@@ -47,6 +47,8 @@ pub struct App {
     shots: Screenshots,
     /// The gamepad triggers last frame.
     triggers: Triggers,
+    /// The look the backdrop texture was drawn for; F3 switches it.
+    drawn_for: Skin,
 }
 
 impl App {
@@ -94,6 +96,7 @@ impl Game for App {
                 ..Screenshots::default()
             },
             triggers: Triggers::default(),
+            drawn_for: Skin::Mouse,
         })
     }
 
@@ -111,6 +114,18 @@ impl Game for App {
 
     /// Draw the backdrop and the moving parts, both scaled by the same whole number.
     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
+        if self.session.skin != self.drawn_for {
+            // F3: the art's night scene, or the plain diagnostic backdrop.
+            let level = &self.session.world.level;
+            let canvas = match self.session.skin {
+                Skin::Mouse => render::backdrop(level),
+                Skin::Blocks => render::plain(level),
+            };
+            let mut rgba = vec![0; (W * H * 4) as usize];
+            canvas.to_rgba(&mut rgba);
+            ctx.gfx.update_texture_rgba(self.tex, &rgba);
+            self.drawn_for = self.session.skin;
+        }
         self.draw.clear();
         render::scene(&mut self.draw, &self.session, self.clock);
         let (ww, wh) = ctx.gfx.size();

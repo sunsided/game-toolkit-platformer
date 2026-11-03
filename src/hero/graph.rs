@@ -156,10 +156,10 @@ pub fn spec() -> GraphSpec {
             StateSpec::new(
                 "idle_fidget",
                 once(&[
-                    (s::FIDGET[0], 0.35),
-                    (s::FIDGET[1], 0.25),
-                    (s::FIDGET[2], 0.5),
-                    (s::FIDGET[3], 0.3),
+                    (s::FIDGET[0], 0.2),
+                    (s::FIDGET[1], 0.6),
+                    (s::FIDGET[2], 0.7),
+                    (s::FIDGET[3], 0.25),
                 ]),
             )
             .then("idle"),

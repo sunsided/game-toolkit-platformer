@@ -200,7 +200,7 @@ pub fn read_intent(input: &Input, scheme: &Scheme, triggers: &mut Triggers) -> I
 }
 
 /// Read the clock and debug keys: P pause, `.` step, `[` `]` slower/faster, `\` normal,
-/// F1 overlay (compact, full, off), F2 next feel preset, F3 the hero's look, R back to the spawn.
+/// F1 overlay (compact, full, off), F2 next feel preset, F3 art or diagnostic look, R back to the spawn.
 pub fn read_keys(input: &Input) -> Keys {
     let p = |k| input.key_pressed(k);
     Keys {

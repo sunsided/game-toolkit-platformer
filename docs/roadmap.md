@@ -20,6 +20,8 @@
 - [x] Super dash (Crystal Heart); gamepad triggers read as axes too
 - [x] The Cheesed heroine as a cut-out puppet with simulated cape, tail and mane; cheese
   wedges for crystals; `task poses`
+- [x] Her bearing from the paintings (stance, wild mane, sword-raise fidget), a readable
+  super dash charge, the moonlit scene; F3 for the diagnostic look
 
 ## Next
 

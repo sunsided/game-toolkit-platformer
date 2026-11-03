@@ -8,7 +8,7 @@
 
 use animation::gfx::font::{self, Font};
 use animation::gfx::{Canvas, H, Raster, W, palette as pal, png};
-use animation::render::{backdrop, mouse};
+use animation::render::{Paint, backdrop, mouse};
 use animation::session::{Overlay, Session};
 use animation::sim::{Intent, Preset, TILE, World, player};
 
@@ -371,11 +371,8 @@ fn main() {
                     y,
                     sprite,
                     p.facing,
-                    Some(&s.rig),
-                    (0.0, 0.0),
-                    false,
-                    None,
-                    1.0,
+                    Some((&s.rig, (0.0, 0.0))),
+                    &Paint::default(),
                 );
             }
         }

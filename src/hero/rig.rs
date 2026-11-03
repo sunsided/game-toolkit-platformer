@@ -3,8 +3,9 @@
 //! [`Frame`] maps the body's local coordinates (forward, down; the 6x12 hitbox spans
 //! -3..3 by -6..6) to the screen for a sprite: squashed, stretched, leaning and mirrored as
 //! its [`Pose`](super::pose::Pose) says. [`Rig`] carries the parts that aren't posed but
-//! simulated: the cape, the tail, the mane and the headband's ends, each a short chain
-//! of points that trails behind the body, swings when it turns and settles when it rests.
+//! simulated: the cape, the tail, three strands of mane and the headband's ends, each a
+//! short chain of points that trails behind the body, swings when it turns and settles
+//! when it rests.
 //!
 //! Drawing only: the simulation never sees any of it.
 
@@ -12,7 +13,7 @@ use super::pose::pose;
 use super::sprite as s;
 use crate::sim::player;
 
-/// A point on the screen, grid pixels.
+/// A point, in units (or pixels, after [`Frame::zoom`]).
 pub type Pt = (f32, f32);
 
 /// The body's local coordinate frame for one sprite at one position.
@@ -52,7 +53,18 @@ impl Frame {
         }
     }
 
-    /// The screen point of local `u` (forward) and `v` (down).
+    /// The same frame with `k` pixels per unit: [`Frame::at`] then returns pixels.
+    pub fn zoom(self, k: f32) -> Self {
+        Self {
+            ox: self.ox * k,
+            oy: self.oy * k,
+            sx: self.sx * k,
+            sy: self.sy * k,
+            ..self
+        }
+    }
+
+    /// The point of local `u` (forward) and `v` (down).
     pub fn at(&self, u: f32, v: f32) -> Pt {
         let (lx, ly) = (u * self.f * self.sx, v * self.sy);
         (
@@ -61,34 +73,45 @@ impl Frame {
         )
     }
 
-    /// The average stretch, for sizing round parts.
+    /// The average stretch (times the zoom), for sizing round parts.
     pub fn scale(&self) -> f32 {
         (self.sx + self.sy) / 2.0
     }
+}
+
+/// Standing still: the heroic stance (feet apart, hand on the hilt).
+fn standing(sprite: u16) -> bool {
+    matches!(sprite, 0 | 1 | 44..=51 | 64)
 }
 
 /// Where the arm's hand is for `sprite`, local (forward, down).
 pub fn hand(sprite: u16) -> Pt {
     match sprite {
         56..=64 => (3.6, -0.2),
+        48 => (1.0, 0.4),
+        49 | 50 => (1.8, -8.0),
+        _ if standing(sprite) => (0.9, 0.9),
         30..=33 => (2.6, -3.8 + ((sprite - 30) % 2) as f32),
         34 | 35 => (2.6, -2.8),
         24..=29 | 75 | 76 => (3.0, -0.8),
         s::TAKEOFF | s::RISE | 12..=15 => (1.6, -2.6),
-        _ => (1.0, 2.2),
+        _ => (1.2, 2.2),
     }
 }
 
-/// How far the feet are apart along the walk cycle for `sprite`, -1.5..1.5.
-pub fn stride(sprite: u16) -> f32 {
-    match sprite {
+/// The back and front foot along the body (local forward), for `sprite`: planted wide
+/// when standing, apart and together through the walk cycle.
+pub fn feet(sprite: u16) -> Pt {
+    let stride = match sprite {
         s::RUN_A | 56 | 60 => 1.0,
         s::RUN_C | 58 | 62 => -1.0,
-        67 => 1.5,
-        69 => -1.5,
-        s::RISE | s::FALL_A | s::FALL_B => 0.6,
+        67 => 1.6,
+        69 => -1.6,
+        s::RISE | s::FALL_A | s::FALL_B => 0.5,
+        _ if standing(sprite) => 1.5,
         _ => 0.0,
-    }
+    };
+    (-0.9 - stride, 0.9 + stride)
 }
 
 /// A chain of points hanging from an anchor: Verlet integration with fixed segment
@@ -99,8 +122,8 @@ pub struct Chain {
     pub points: Vec<Pt>,
     /// The points one step ago.
     prev: Vec<Pt>,
-    /// Segment length, pixels.
-    seg: f32,
+    /// Segment length, units.
+    pub seg: f32,
     /// Downward pull, px/s².
     gravity: f32,
     /// Pull toward the rest direction (backward, down), px/s², before facing.
@@ -141,6 +164,20 @@ impl Chain {
         let a = f * self.curl * i as f32;
         let (s, c) = a.sin_cos();
         (bx * c - by * s, bx * s + by * c)
+    }
+
+    /// Keep the chain behind the body and above the floor: no point (but the anchor) may
+    /// be further forward than the line `back` (screen x of the body's back; forward is
+    /// `f`) or lower than `floor`. A cape dragged forward by walking backwards then
+    /// presses against her back, and one that sags bunches on the ground, instead of
+    /// passing through her legs or the floor.
+    fn confine(&mut self, back: f32, f: f32, floor: f32) {
+        for p in self.points.iter_mut().skip(1) {
+            if (p.0 - back) * f > 0.0 {
+                p.0 = back;
+            }
+            p.1 = p.1.min(floor);
+        }
     }
 
     /// Lay the chain out straight from `anchor` along its rest direction.
@@ -185,18 +222,21 @@ impl Chain {
     }
 }
 
+/// The body's back, local forward: loose parts stay behind it.
+const BACK: f32 = -1.6;
+
 /// Where the loose parts hang from, local (forward, down).
 pub mod anchor {
     use super::Pt;
 
-    /// The cape, between the shoulders, a little behind.
-    pub const CAPE: Pt = (-1.0, -1.4);
+    /// The cape, at the shoulders, a little behind.
+    pub const CAPE: Pt = (-0.8, -1.8);
     /// The tail, low on the back.
-    pub const TAIL: Pt = (-2.3, 3.6);
-    /// The mane, back of the head.
-    pub const HAIR: Pt = (-2.0, -4.4);
+    pub const TAIL: Pt = (-2.4, 3.2);
+    /// The mane's three strands: crown, back of the head, nape.
+    pub const HAIR: [Pt; 3] = [(-1.2, -6.6), (-2.3, -5.6), (-2.5, -4.2)];
     /// The headband's knot, back of the head.
-    pub const BAND: Pt = (-2.4, -5.0);
+    pub const BAND: Pt = (-2.7, -5.7);
 }
 
 /// The hero's simulated parts.
@@ -206,8 +246,8 @@ pub struct Rig {
     pub cape: Chain,
     /// The tail.
     pub tail: Chain,
-    /// The blonde mane streaming back from the head.
-    pub hair: Chain,
+    /// The long, wavy mane: crown, back and nape strands.
+    pub hair: [Chain; 3],
     /// The headband's loose ends.
     pub band: Chain,
     /// The cape's anchor last step, to notice teleports.
@@ -216,11 +256,16 @@ pub struct Rig {
 
 impl Default for Rig {
     fn default() -> Self {
+        let strand = |n, rest: Pt| Chain::new(n, 1.25, 110.0, rest, 1.8, 0.14);
         Self {
-            cape: Chain::new(6, 1.8, 300.0, (260.0, 0.0), 2.2, 0.12),
-            tail: Chain::new(10, 1.3, 40.0, (420.0, 160.0), 1.0, 0.18).curled(0.35),
-            hair: Chain::new(5, 1.4, 120.0, (380.0, 80.0), 1.6, 0.15),
-            band: Chain::new(4, 1.3, 200.0, (260.0, 40.0), 2.6, 0.1),
+            cape: Chain::new(8, 1.7, 300.0, (280.0, 0.0), 2.2, 0.12),
+            tail: Chain::new(6, 1.2, 40.0, (420.0, 160.0), 1.0, 0.18).curled(0.4),
+            hair: [
+                strand(6, (420.0, 20.0)),
+                strand(7, (360.0, 90.0)),
+                strand(7, (260.0, 160.0)),
+            ],
+            band: Chain::new(4, 1.2, 200.0, (260.0, 40.0), 2.6, 0.1),
             last: None,
         }
     }
@@ -240,7 +285,9 @@ impl Rig {
         if jumped {
             self.cape.reset(cape, fr.f);
             self.tail.reset(at(anchor::TAIL), fr.f);
-            self.hair.reset(at(anchor::HAIR), fr.f);
+            for (h, a) in self.hair.iter_mut().zip(anchor::HAIR) {
+                h.reset(at(a), fr.f);
+            }
             self.band.reset(at(anchor::BAND), fr.f);
             return;
         }
@@ -252,8 +299,22 @@ impl Rig {
         };
         self.cape.step(cape, vel, fr.f, sail, dt);
         self.tail.step(at(anchor::TAIL), vel, fr.f, (0.0, 0.0), dt);
-        self.hair.step(at(anchor::HAIR), vel, fr.f, (0.0, 0.0), dt);
+        for (h, a) in self.hair.iter_mut().zip(anchor::HAIR) {
+            h.step(at(a), vel, fr.f, (0.0, 0.0), dt);
+        }
         self.band.step(at(anchor::BAND), vel, fr.f, (0.0, 0.0), dt);
+        // The body is in the way: the cape and tail stay behind her back (the lower body),
+        // the mane and headband behind her head; nothing goes below her feet.
+        let floor = y + player::H as f32;
+        let back_body = at((BACK, 2.0)).0;
+        let back_head = at((BACK, -5.0)).0;
+        // The cape is a wide ribbon around its points: stop them short of the floor.
+        self.cape.confine(back_body, fr.f, floor - 2.0);
+        self.tail.confine(back_body, fr.f, floor);
+        for h in &mut self.hair {
+            h.confine(back_head, fr.f, floor);
+        }
+        self.band.confine(back_head, fr.f, floor);
     }
 }
 
@@ -297,6 +358,34 @@ mod tests {
         for w in r.tail.points.windows(2) {
             let d = ((w[1].0 - w[0].0).powi(2) + (w[1].1 - w[0].1).powi(2)).sqrt();
             assert!((d - r.tail.seg).abs() < 0.05, "{d}");
+        }
+    }
+
+    #[test]
+    fn zoom_scales_positions() {
+        let a = Frame::new(10.0, 20.0, s::IDLE_A, 1);
+        let b = a.zoom(2.0);
+        let (p, q) = (a.at(1.0, -2.0), b.at(1.0, -2.0));
+        assert!((q.0 - 2.0 * p.0).abs() < 1e-4 && (q.1 - 2.0 * p.1).abs() < 1e-4);
+    }
+
+    #[test]
+    fn walking_backwards_keeps_the_cape_behind_and_above_the_floor() {
+        let mut r = Rig::default();
+        let (mut x, y) = (100.0, 100.0);
+        // Pulling: facing right, moving left.
+        for _ in 0..240 {
+            x -= 30.0 / 120.0;
+            r.step(x, y, 60, 1, (-30.0, 0.0), 1.0 / 120.0);
+        }
+        let fr = Frame::new(x, y, 60, 1);
+        let back = fr.at(BACK, 2.0).0;
+        for p in r.cape.points.iter().skip(1) {
+            assert!(p.0 <= back + 1e-3, "cape in front of her: {p:?} vs {back}");
+            assert!(
+                p.1 <= y + player::H as f32 + 1e-3,
+                "cape below the floor: {p:?}"
+            );
         }
     }
 }

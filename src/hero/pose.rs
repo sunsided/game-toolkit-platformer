@@ -45,16 +45,19 @@ pub fn pose(sprite: u16) -> Pose {
         pal::GREEN,
     );
     match sprite {
-        s::IDLE_A => p(6.0, 12.0, 0.0, g),
-        s::IDLE_B => p(6.0, 11.0, 0.0, g),
+        // Standing tall, leaning back a touch, chest out: the heroic stance.
+        s::IDLE_A => p(6.0, 12.0, -4.0, g),
+        s::IDLE_B => p(6.4, 11.6, -4.0, g),
         s::LOOK_UP_A => p(6.0, 12.0, -10.0, g),
         s::LOOK_UP_B => p(6.0, 13.0, -18.0, g),
         s::LOOK_DOWN_A => p(7.0, 11.0, 12.0, g),
         s::LOOK_DOWN_B => p(8.0, 9.0, 22.0, g),
-        48 => p(6.0, 12.0, -14.0, g),
-        49 => p(6.0, 12.0, 0.0, g),
-        50 => p(5.0, 14.0, 0.0, pal::PALE),
-        51 => p(7.0, 11.0, 0.0, g),
+        // The fidget: reach for the hilt, raise the sword to the sky (chin up), hold it
+        // with a glint, sheathe it.
+        48 => p(6.0, 12.0, -2.0, g),
+        49 => p(6.0, 12.4, -8.0, pal::PALE),
+        50 => p(6.0, 12.6, -9.0, pal::PALE),
+        51 => p(6.2, 11.8, -3.0, g),
         52..=55 => {
             let spread = [60.0, 150.0, 100.0, 30.0][(sprite - 52) as usize];
             Pose {

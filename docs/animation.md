@@ -56,7 +56,7 @@ air arc, and a low-priority net that settles air states on the ground.
 
 The graph only names sprite numbers. `hero/pose.rs` says what each means for the body
 (size, lean, lift); `render/mouse.rs` draws the heroine as a cut-out puppet in that body
-frame, and `hero/rig.rs` simulates her cape, tail, mane and headband ends as short Verlet
+frame (at `render::K` pixels per unit, 1 by default), and `hero/rig.rs` simulates her cape, tail, mane and headband ends as short Verlet
 chains with gravity, air drag from moving and a rest shape (the tail curls). Hand-drawn
 frames would replace `mouse.rs` and keep everything else.
 

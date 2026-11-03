@@ -69,7 +69,8 @@ pub const LOOK_UP_B: u16 = 45;
 pub const LOOK_DOWN_A: u16 = 46;
 /// Looking down, held.
 pub const LOOK_DOWN_B: u16 = 47;
-/// Idle fidget after standing still a while: glance back, stretch, settle.
+/// Idle fidget after standing still a while: reach for the hilt, raise the sword to the
+/// sky, hold it (with a glint), sheathe it.
 pub const FIDGET: [u16; 4] = [48, 49, 50, 51];
 /// Air jump with wings (Monarch Wings): spread, beat down, glide, fold.
 pub const WINGS: [u16; 4] = [52, 53, 54, 55];

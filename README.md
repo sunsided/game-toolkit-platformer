@@ -30,9 +30,11 @@ The pictures are filmstrips (`task snapshot`): a scripted move played headless, 
 
 ![The heroine in every sprite pose](docs/art/poses.png)
 
-She is a cut-out puppet rather than hand-drawn frames: boots, tunic, arm, head, snout, ears and headband are placed in the body's frame for each of the 78 sprite poses, so every squash, stretch and lean carries over. The cape, tail, mane and headband ends are short simulated chains; they trail behind her, swing over when she turns, open up when she glides, and settle when she stands. The colors come from the character sheet's palette. When her dash is spent, the mane turns pale blue, as Madeline's hair does in Celeste, and the dash crystals are cheese wedges (with a heart for each one eaten). F3 switches to the old debug blocks, colored by kind of state, and `task poses` renders the sheet above.
+She is a cut-out puppet rather than hand-drawn frames: boots, tunic, belt, sheathed sword, arm, head, muzzle, ears and headband are placed in the body's frame for each of the 78 sprite poses, so every squash, stretch and lean carries over. The cape, tail, three strands of mane and the headband's ends are short simulated chains; they trail behind her, swing over when she turns, open up when she glides, and settle when she stands. The colors come from the character sheet's palette, and her bearing from the Cheesed paintings: a wide stance with a hand on the hilt, a wild mane and a large torn cape, and, when left standing for a few seconds, the sword drawn and raised to the sky. When her dash is spent, the mane turns pale blue, as Madeline's hair does in Celeste; charging the super dash, she glows with crystal light that gathers around her and flashes once it is ready. The dash crystals are cheese wedges (with a heart for each one eaten). `task poses` renders the sheet above.
 
-Her face is two or three pixels at this size, so the sheet's expressions don't show, and her sword waits for an attack move.
+The scene follows the paintings too: a violet night sky with stars and clouds, a full moon, snowy mountains, a castle with lit windows, firs and mist behind the level, rock with a warm rim light, and wooden planks for the thin platforms. F3 switches to a diagnostic look instead: the hero as a block colored by kind of state, on a plain backdrop.
+
+Her face is a few pixels at this size, so the sheet's expressions don't show, and her sword waits for an attack move. The renderer can draw at two pixels per simulation unit for twice the detail; at one, she kept more of her charm.
 
 ## Playing
 
@@ -66,7 +68,7 @@ Keyboard / gamepad, with Xbox button names. Hollow Knight's own slots are kept w
 - **Wall jump:** hold toward a wall while falling to slide, then jump. The stick aims it: toward the wall kicks you back onto it higher up (repeat to climb a wall; the chimneys are there for that), away leaps off, and up and down tilt the jump.
 - **Climb:** hold grab against a wall; up and down climb until the stamina runs out, and climbing past the top hops over. A tired grip slips.
 - **Dive:** down + dive in the air: a short hang, then straight down.
-- **Super dash** (hybrid, Hollow Knight-like): hold the button standing, or while sliding down or holding on to a wall, until the hero flashes (0.8 s), then let go. The hero flies straight and level, over gaps, away from the wall it charged on, until a wall stops it. Jump or the button again cancels the flight; letting go early or jumping cancels the charge.
+- **Super dash** (hybrid, Hollow Knight-like): hold the button standing, or while sliding down or holding on to a wall, until she flashes (0.8 s; crystal light gathers around her while it charges), then let go. The hero flies straight and level, over gaps, away from the wall it charged on, until a wall stops it. Jump or the button again cancels the flight; letting go early or jumping cancels the charge.
 - **Drop through:** down + jump on a thin platform.
 - **Push and pull:** walk into a box to push it; hold grab facing it and walk away to pull it.
 - **Look up and down:** hold up or down while standing still.

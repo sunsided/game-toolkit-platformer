@@ -32,7 +32,8 @@ strict lints). Design docs live in `docs/`; keep them in sync when behavior chan
 - `src/gfx/`: the 384x216 grid (8 px tiles, 5x = 1080p). Draw through `Raster` only.
   `Canvas` = CPU image (backdrop, snapshots), `DrawList` = spans the app turns into GPU
   rects. Copied from Starscorcher.
-- `src/render/`: backdrop, scene, the heroine (`mouse.rs`: a cut-out puppet after the
+- `src/render/`: the moonlit backdrop and the plain diagnostic one (`backdrop.rs`, F3),
+  scene (everything scaled by `K`, pixels per unit, 1), the heroine (`mouse.rs`: a cut-out puppet after the
   Cheesed character sheet, kept outside the repo in pCloud), the debug-block look
   (`hero.rs`, F3), the debug overlay (`debug.rs`). `task poses` renders every sprite.
 - `src/app.rs` + `src/app/`: the only toolkit glue: input (keyboard + gamepad, Hollow
