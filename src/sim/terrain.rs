@@ -6,6 +6,9 @@
 //! for 8-unit tiles. If your tiles are 16 pixels, divide by two on the way in (or use
 //! [`super::Level`], which already speaks units).
 //!
+//! Hazards, pickups and checkpoints aren't the terrain's business: test the character's
+//! hitbox against them after each update (`docs/hazards.md` has the recipe).
+//!
 //! To start the character standing on your ground, give the builder the feet's position:
 //! `Platformer::builder().spawn_standing(x, floor_y)` (or `Player::standing_at` for the
 //! hitbox's top-left).

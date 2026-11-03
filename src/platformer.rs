@@ -34,7 +34,10 @@ use crate::sim::{DT, Event, Intent, Level, Player, Preset, Rect, TILE, Terrain, 
 const MAX_STEPS: u32 = 8;
 
 /// One playable character. The world around it is yours: pass your [`Terrain`] (or a
-/// [`Level`]) to each update.
+/// [`Level`]) to each update. For spikes, springs, checkpoints and pickups, test
+/// [`Platformer::hitbox`] after the update and answer with [`Platformer::respawn`],
+/// [`Platformer::launch`], [`Platformer::set_spawn`] or [`Platformer::refill`]
+/// (`docs/hazards.md` has the recipe).
 pub struct Platformer {
     /// The simulation: level, body, tuning. Read it for anything the accessors don't cover.
     pub world: World,

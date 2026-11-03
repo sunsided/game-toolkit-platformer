@@ -107,3 +107,8 @@ pub mod prelude {
 #[cfg(all(doctest, feature = "toolkit"))]
 #[doc = include_str!("../README.md")]
 struct ReadmeDoctests;
+
+/// The hazards recipe's code, compiled as a doc test.
+#[cfg(doctest)]
+#[doc = include_str!("../docs/hazards.md")]
+struct HazardsDoctests;

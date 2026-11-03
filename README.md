@@ -125,7 +125,7 @@ To change the animation itself, pass your own graph with `.graph(spec)`; start f
 | `hero` | The built-in character: its graph, sprite numbers, and the driver from movement to graph parameters. |
 | `controls` | game-toolkit input to an `Intent`, through a `Scheme` per preset. |
 
-With `default-features = false`, the crate drops game-toolkit and depends on nothing but std: use `sim` and `anim` in any engine. `docs/` describes the movement rules and the animation graph in detail.
+With `default-features = false`, the crate drops game-toolkit and depends on nothing but std: use `sim` and `anim` in any engine. `docs/` describes the movement rules and the animation graph in detail, and how to add hazards, springs and checkpoints (`docs/hazards.md`).
 
 ## The demo
 
