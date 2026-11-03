@@ -84,6 +84,14 @@ pub const ROCK_DK: Rgb = Rgb::hex(0x2a2240);
 pub const ROCK_LT: Rgb = Rgb::hex(0x9c8cbc);
 /// Warm flecks on lit rock, as in the paintings' torchlight.
 pub const GOLD_MOSS: Rgb = Rgb::hex(0xd8a84a);
+/// Moss hanging under the platforms.
+pub const MOSS: Rgb = Rgb::hex(0x2c5a40);
+/// Moss leaves catching the moonlight.
+pub const MOSS_LT: Rgb = Rgb::hex(0x5e9a5c);
+/// Grass on the rock tops.
+pub const GRASS: Rgb = Rgb::hex(0x3e6e4a);
+/// Grass tips catching the light.
+pub const GRASS_LT: Rgb = Rgb::hex(0x7ab468);
 /// Wooden planks.
 pub const PLANK: Rgb = Rgb::hex(0x7a4a28);
 /// The planks' lit top edge.

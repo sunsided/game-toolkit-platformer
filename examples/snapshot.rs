@@ -378,7 +378,7 @@ fn main() {
         }
         // The final frame on top: blocks, crystals, effects, the hero where it ended.
         s.overlay = Overlay::Off;
-        animation::render::scene(&mut canvas, &s, 0.0);
+        animation::render::scene(&mut canvas, &s, &[], 0.0);
         caption(&mut canvas, sc.name, &seen);
         let path = format!("{dir}/{}.png", sc.name);
         std::fs::write(&path, png::encode(&canvas, 3)).expect("write snapshot");

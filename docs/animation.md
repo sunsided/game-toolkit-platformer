@@ -57,8 +57,18 @@ air arc, and a low-priority net that settles air states on the ground.
 The graph only names sprite numbers. `hero/pose.rs` says what each means for the body
 (size, lean, lift); `render/mouse.rs` draws the heroine as a cut-out puppet in that body
 frame (at `render::K` pixels per unit, 1 by default), and `hero/rig.rs` simulates her cape, tail, mane and headband ends as short Verlet
-chains with gravity, air drag from moving and a rest shape (the tail curls). Hand-drawn
+chains with gravity, air drag from moving, a rest shape (the tail curls) and the
+wind (`session/wind.rs`: a breeze, stronger with height, that streams them out behind
+her either way, and gusts from three slow waves that blow in their real direction);
+they stay behind her body and above the floor. Hand-drawn
 frames would replace `mouse.rs` and keep everything else.
+
+## Markers driving the world
+
+The run, sprint, push and pull clips carry `step` markers; the session turns each one
+into a small shove on the grass under her feet (`session/foliage.rs`). Events from the
+simulation (landings, rolls, dashes, dives, the super dash) shove the plants harder.
+Sounds would hang off the same markers.
 
 ## Adding a move
 

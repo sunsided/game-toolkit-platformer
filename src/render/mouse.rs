@@ -13,6 +13,8 @@
 use super::KF;
 use crate::gfx::{DrawList, Raster, Rgb, bayer, palette as pal};
 use crate::hero::pose::pose;
+#[cfg(test)]
+use crate::hero::rig::Air;
 use crate::hero::rig::{Frame, Pt, Rig, feet, hand};
 use crate::hero::sprite::GLIDE;
 
@@ -23,6 +25,8 @@ pub struct Paint {
     pub k: f32,
     /// Seconds, for the mane's wave.
     pub t: f32,
+    /// How hard the mane flutters (1 calm, more in a gust).
+    pub flutter: f32,
     /// Her dash is spent: the mane turns pale blue.
     pub spent: bool,
     /// Paint all of her in one color (afterimages, a flash).
@@ -38,6 +42,7 @@ impl Default for Paint {
         Self {
             k: KF,
             t: 0.0,
+            flutter: 1.0,
             spent: false,
             tint: None,
             glow: None,
@@ -74,6 +79,13 @@ pub fn draw(
             .collect()
     };
 
+    // Blown forward (a wind at her back), the mane crosses in front of her head, so it's
+    // drawn over it rather than hidden behind it.
+    let forward = rig.is_some_and(|(rig, _)| {
+        let h = &rig.hair[0];
+        let (root, tip) = (h.points[0], h.points[h.points.len() - 1]);
+        (tip.0 - root.0) * fr.f > 1.0
+    });
     if let Some((rig, shift)) = rig {
         let cape = chain(&rig.cape.points, shift);
         strip(
@@ -85,17 +97,8 @@ pub fn draw(
             pal::MOUSE_RED_DK,
         );
         hem(&mut d, &cape, 9.5 * k, pal::MOUSE_RED_DK);
-        for (i, h) in rig.hair.iter().enumerate().rev() {
-            let pts = wave(&chain(&h.points, shift), paint.t, i as f32, 0.6 * k);
-            let c = if i == 0 { hair } else { hair_dk };
-            strip(&mut d, &pts, 2.6 * k, 0.6 * k, c, hair_dk);
-            // Loose wisps flicking off each strand: wild, windblown.
-            // Only from the crown strand, every third point.
-            let wisps = if i == 0 { &pts[..] } else { &pts[..0] };
-            for (j, p) in wisps.iter().enumerate().skip(2).step_by(3) {
-                let w = (paint.t * 7.0 + j as f32 + i as f32 * 1.7).sin() * 1.2 * k;
-                line(&mut d, *p, (p.0 - fr.f * 1.6 * k, p.1 + w), hair);
-            }
+        if !forward {
+            mane(&mut d, rig, shift, paint, (hair, hair_dk));
         }
         let tail = chain(&rig.tail.points, shift);
         strip(
@@ -202,6 +205,10 @@ pub fn draw(
     disc(&mut d, fr.at(0.7, -8.6), 2.7 * z, pal::MOUSE_FUR);
     disc(&mut d, fr.at(0.9, -8.4), 1.9 * z, pal::MOUSE_PINK);
 
+    if forward && let Some((rig, shift)) = rig {
+        mane(&mut d, rig, shift, paint, (hair, hair_dk));
+    }
+
     // Bangs over the brow, the headband slanting down toward the eyes (determined), its
     // knot and loose ends behind.
     thick(&mut d, fr.at(-1.4, -6.9), fr.at(1.6, -6.3), 1.0 * z, hair);
@@ -284,6 +291,33 @@ pub fn draw(
                     r.put(px, s.y, c);
                 }
             }
+        }
+    }
+}
+
+/// The mane's three strands (crown strand last, on top), waving, with loose wisps off the
+/// crown strand, in `colors` (light, dark).
+fn mane(d: &mut DrawList, rig: &Rig, shift: Pt, paint: &Paint, colors: (Rgb, Rgb)) {
+    let k = paint.k;
+    let (hair, hair_dk) = colors;
+    let chain = |pts: &[Pt]| -> Vec<Pt> {
+        pts.iter()
+            .map(|p| ((p.0 + shift.0) * k, (p.1 + shift.1) * k))
+            .collect()
+    };
+    for (i, h) in rig.hair.iter().enumerate().rev() {
+        let amp = 0.6 * k * paint.flutter;
+        let pts = wave(&chain(&h.points), paint.t * paint.flutter, i as f32, amp);
+        let c = if i == 0 { hair } else { hair_dk };
+        strip(d, &pts, 2.6 * k, 0.6 * k, c, hair_dk);
+        // Loose wisps flicking off each strand: wild, windblown.
+        // Only from the crown strand, every third point.
+        let wisps = if i == 0 { &pts[..] } else { &pts[..0] };
+        // They flick the way the strand flows, back or (blown) forward.
+        let dir = (pts[pts.len() - 1].0 - pts[0].0).signum();
+        for (j, p) in wisps.iter().enumerate().skip(2).step_by(3) {
+            let w = (paint.t * 7.0 + j as f32 + i as f32 * 1.7).sin() * 1.2 * k;
+            line(d, *p, (p.0 + dir * 1.6 * k, p.1 + w), hair);
         }
     }
 }
@@ -481,7 +515,7 @@ mod tests {
     #[test]
     fn every_sprite_draws_her_near_the_hitbox() {
         let mut rig = Rig::default();
-        rig.step(100.0, 100.0, 0, 1, (0.0, 0.0), 1.0 / 120.0);
+        rig.step(100.0, 100.0, 0, 1, (0.0, 0.0), Air::default(), 1.0 / 120.0);
         let center = ((100.0 + 3.0) * KF, (100.0 + 6.0) * KF);
         for sprite in 0..COUNT {
             let mut c = Canvas::new(W, H);

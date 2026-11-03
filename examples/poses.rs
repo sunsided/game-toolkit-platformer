@@ -5,7 +5,7 @@
 
 use animation::gfx::font::{self, Font};
 use animation::gfx::{Canvas, Raster, palette as pal, png};
-use animation::hero::rig::Rig;
+use animation::hero::rig::{Air, Rig};
 use animation::hero::sprite::COUNT;
 use animation::render::{KF, Paint, mouse};
 
@@ -31,7 +31,7 @@ fn main() {
         let (x, y) = ((x0 + 11) as f32 / KF, (y0 + 13) as f32 / KF);
         let mut rig = Rig::default();
         for _ in 0..240 {
-            rig.step(x, y, sprite, 1, (0.0, 0.0), 1.0 / 120.0);
+            rig.step(x, y, sprite, 1, (0.0, 0.0), Air::default(), 1.0 / 120.0);
         }
         mouse::draw(
             &mut c,

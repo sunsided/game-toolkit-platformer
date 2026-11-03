@@ -16,6 +16,16 @@ use crate::sim::player;
 /// A point, in units (or pixels, after [`Frame::zoom`]).
 pub type Pt = (f32, f32);
 
+/// The air the loose parts move in.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Air {
+    /// A steady breeze's strength, units/s²: it streams them out behind her, whichever
+    /// way she faces.
+    pub breeze: f32,
+    /// A gust's push in its real direction, units/s² (x right, y down).
+    pub gust: Pt,
+}
+
 /// The body's local coordinate frame for one sprite at one position.
 #[derive(Clone, Copy, Debug)]
 pub struct Frame {
@@ -224,6 +234,8 @@ impl Chain {
 
 /// The body's back, local forward: loose parts stay behind it.
 const BACK: f32 = -1.6;
+/// How far forward a tailwind may carry the loose parts, local forward.
+const FRONT: f32 = 2.5;
 
 /// Where the loose parts hang from, local (forward, down).
 pub mod anchor {
@@ -258,12 +270,12 @@ impl Default for Rig {
     fn default() -> Self {
         let strand = |n, rest: Pt| Chain::new(n, 1.25, 110.0, rest, 1.8, 0.14);
         Self {
-            cape: Chain::new(8, 1.7, 300.0, (280.0, 0.0), 2.2, 0.12),
+            cape: Chain::new(8, 1.7, 300.0, (150.0, 0.0), 2.2, 0.12),
             tail: Chain::new(6, 1.2, 40.0, (420.0, 160.0), 1.0, 0.18).curled(0.4),
             hair: [
-                strand(6, (420.0, 20.0)),
-                strand(7, (360.0, 90.0)),
-                strand(7, (260.0, 160.0)),
+                strand(6, (200.0, 20.0)),
+                strand(7, (180.0, 90.0)),
+                strand(7, (150.0, 160.0)),
             ],
             band: Chain::new(4, 1.2, 200.0, (260.0, 40.0), 2.6, 0.1),
             last: None,
@@ -273,8 +285,10 @@ impl Default for Rig {
 
 impl Rig {
     /// Follow the body one step of `dt`: hitbox top-left `x, y`, `sprite`, `facing`,
-    /// velocity `vel` (px/s). Big jumps (a respawn, a placement) lay the parts out anew.
-    pub fn step(&mut self, x: f32, y: f32, sprite: u16, facing: i32, vel: Pt, dt: f32) {
+    /// velocity `vel` (units/s), in the `air`. Big jumps (a respawn, a placement) lay the
+    /// parts out anew.
+    #[allow(clippy::too_many_arguments)]
+    pub fn step(&mut self, x: f32, y: f32, sprite: u16, facing: i32, vel: Pt, air: Air, dt: f32) {
         let fr = Frame::new(x, y, sprite, facing);
         let at = |p: Pt| fr.at(p.0, p.1);
         let cape = at(anchor::CAPE);
@@ -297,17 +311,26 @@ impl Rig {
         } else {
             (0.0, 0.0)
         };
-        self.cape.step(cape, vel, fr.f, sail, dt);
-        self.tail.step(at(anchor::TAIL), vel, fr.f, (0.0, 0.0), dt);
+        // The wind moves the mane, headband and cape fully, the tail a little.
+        // The breeze streams out behind her; a gust blows its own way.
+        let wind = (-fr.f * air.breeze + air.gust.0, air.gust.1);
+        let blown = |k: f32| (wind.0 * k, wind.1 * k);
+        let cape_push = (sail.0 + blown(1.0).0, sail.1 + blown(1.0).1);
+        self.cape.step(cape, vel, fr.f, cape_push, dt);
+        self.tail.step(at(anchor::TAIL), vel, fr.f, blown(0.25), dt);
         for (h, a) in self.hair.iter_mut().zip(anchor::HAIR) {
-            h.step(at(a), vel, fr.f, (0.0, 0.0), dt);
+            h.step(at(a), vel, fr.f, blown(1.0), dt);
         }
-        self.band.step(at(anchor::BAND), vel, fr.f, (0.0, 0.0), dt);
+        self.band.step(at(anchor::BAND), vel, fr.f, blown(1.0), dt);
         // The body is in the way: the cape and tail stay behind her back (the lower body),
-        // the mane and headband behind her head; nothing goes below her feet.
+        // the mane and headband behind her head (unless the wind carries them past);
+        // nothing goes below her feet.
         let floor = y + player::H as f32;
-        let back_body = at((BACK, 2.0)).0;
-        let back_head = at((BACK, -5.0)).0;
+        // With the wind at her back, it may carry mane and cape forward past her (they
+        // are drawn behind her, so the cape billows around her rather than over her).
+        let tailwind = air.gust.0 * fr.f > 0.0 && wind.0 * fr.f > 0.0;
+        let back_body = at((if tailwind { FRONT } else { BACK }, 2.0)).0;
+        let back_head = at((if tailwind { FRONT + 1.0 } else { BACK }, -5.0)).0;
         // The cape is a wide ribbon around its points: stop them short of the floor.
         self.cape.confine(back_body, fr.f, floor - 2.0);
         self.tail.confine(back_body, fr.f, floor);
@@ -328,14 +351,22 @@ mod tests {
         let (mut x, y) = (100.0, 100.0);
         for _ in 0..120 {
             x += 90.0 / 120.0;
-            r.step(x, y, s::RUN_A, 1, (90.0, 0.0), 1.0 / 120.0);
+            r.step(x, y, s::RUN_A, 1, (90.0, 0.0), Air::default(), 1.0 / 120.0);
         }
         let tip = *r.cape.points.last().unwrap();
         assert!(tip.0 < r.cape.points[0].0 - 3.0, "trails behind: {tip:?}");
         // Turning around swings it to the other side.
         for _ in 0..120 {
             x -= 90.0 / 120.0;
-            r.step(x, y, s::RUN_A, -1, (-90.0, 0.0), 1.0 / 120.0);
+            r.step(
+                x,
+                y,
+                s::RUN_A,
+                -1,
+                (-90.0, 0.0),
+                Air::default(),
+                1.0 / 120.0,
+            );
         }
         let tip = *r.cape.points.last().unwrap();
         assert!(tip.0 > r.cape.points[0].0 + 3.0, "swung over: {tip:?}");
@@ -352,6 +383,10 @@ mod tests {
                 s::IDLE_A,
                 1,
                 (20.0 * t.cos(), 0.0),
+                Air {
+                    breeze: 300.0,
+                    gust: (0.0, 0.0),
+                },
                 1.0 / 120.0,
             );
         }
@@ -376,7 +411,7 @@ mod tests {
         // Pulling: facing right, moving left.
         for _ in 0..240 {
             x -= 30.0 / 120.0;
-            r.step(x, y, 60, 1, (-30.0, 0.0), 1.0 / 120.0);
+            r.step(x, y, 60, 1, (-30.0, 0.0), Air::default(), 1.0 / 120.0);
         }
         let fr = Frame::new(x, y, 60, 1);
         let back = fr.at(BACK, 2.0).0;
@@ -385,6 +420,56 @@ mod tests {
             assert!(
                 p.1 <= y + player::H as f32 + 1e-3,
                 "cape below the floor: {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn breeze_streams_behind_either_way_and_a_gust_blows_its_own() {
+        let tips = |facing: i32, air: Air| {
+            let mut r = Rig::default();
+            for _ in 0..240 {
+                r.step(
+                    100.0,
+                    100.0,
+                    s::IDLE_A,
+                    facing,
+                    (0.0, 0.0),
+                    air,
+                    1.0 / 120.0,
+                );
+            }
+            let ends = |c: &Chain| (c.points[0].0, c.points.last().unwrap().0);
+            (ends(&r.hair[0]), ends(&r.cape))
+        };
+        // A breeze alone: behind her, mirrored with her facing.
+        let breeze = Air {
+            breeze: 300.0,
+            gust: (0.0, 0.0),
+        };
+        for facing in [1, -1] {
+            let ((root, end), (cape_root, cape_end)) = tips(facing, breeze);
+            let f = facing as f32;
+            assert!((end - root) * f < -3.0, "facing {facing}: mane behind");
+            assert!(
+                (cape_end - cape_root) * f < -2.0,
+                "facing {facing}: cape behind"
+            );
+        }
+        // A gust from the right (blowing left): left, whichever way she faces.
+        let gust = Air {
+            breeze: 0.0,
+            gust: (-350.0, 0.0),
+        };
+        for facing in [1, -1] {
+            let ((root, end), (cape_root, cape_end)) = tips(facing, gust);
+            assert!(
+                end < root - 3.0,
+                "facing {facing}: mane goes left: {root} -> {end}"
+            );
+            assert!(
+                cape_end < cape_root - 1.0,
+                "facing {facing}: cape goes left: {cape_root} -> {cape_end}"
             );
         }
     }

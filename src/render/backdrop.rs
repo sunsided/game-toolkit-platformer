@@ -118,24 +118,65 @@ fn sky(c: &mut Canvas) {
     }
 }
 
+/// One star: where, and how bright (0..1).
+fn star(i: i32) -> (i32, i32, f32) {
+    let x = (hash(i, 1) % W as u32) as i32;
+    let y = (rand(i, 2).powf(1.6) * H as f32 * 0.7) as i32;
+    (x, y, rand(i, 3))
+}
+
+/// A star's color by brightness.
+fn star_color(b: f32) -> Rgb {
+    if b > 0.93 {
+        pal::WHITE
+    } else {
+        pal::STAR.lerp(pal::SKY_1, 0.6 - b * 0.6)
+    }
+}
+
 /// Stars, denser and brighter toward the top; the brightest with a cross of glints.
 fn stars(c: &mut Canvas) {
     for i in 0..s(520) {
-        let x = (hash(i, 1) % W as u32) as i32;
-        let y = (rand(i, 2).powf(1.6) * H as f32 * 0.7) as i32;
-        let b = rand(i, 3);
-        let col = if b > 0.93 {
-            pal::WHITE
-        } else {
-            pal::STAR.lerp(pal::SKY_1, 0.6 - b * 0.6)
-        };
-        c.put(x, y, col);
+        let (x, y, b) = star(i);
+        c.put(x, y, star_color(b));
         if b > 0.98 {
             for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                 c.blend(x + dx, y + dy, pal::STAR, 0.5);
             }
         }
     }
+}
+
+/// A star that twinkles: where, how bright, and its own slow rhythm.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Twinkle {
+    /// Pixel x.
+    pub x: i32,
+    /// Pixel y.
+    pub y: i32,
+    /// Brightness, 0..1.
+    pub bright: f32,
+    /// Radians per second.
+    pub speed: f32,
+    /// Where in its rhythm it starts.
+    pub phase: f32,
+}
+
+/// The stars still visible in a finished backdrop `c` (not covered by clouds, the moon,
+/// mountains or the level), with a rhythm each, for twinkling over it.
+pub fn twinkles(c: &Canvas) -> Vec<Twinkle> {
+    (0..s(520))
+        .filter_map(|i| {
+            let (x, y, b) = star(i);
+            (c.get(x, y) == star_color(b)).then(|| Twinkle {
+                x,
+                y,
+                bright: b,
+                speed: 0.6 + rand(i, 4) * 1.6,
+                phase: rand(i, 5) * std::f32::consts::TAU,
+            })
+        })
+        .collect()
 }
 
 /// The moon: a dithered halo, the disc shaded toward its lower right, and craters.
@@ -382,4 +423,24 @@ fn plank(c: &mut Canvas, tx: i32, x: i32, y: i32, t: i32) {
     }
     c.put(x + q, y + q, pal::NAIL);
     c.put(x + t - q - 1, y + q, pal::NAIL);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_visible_stars_twinkle() {
+        let level = Level::demo();
+        let c = backdrop(&level);
+        let stars = twinkles(&c);
+        assert!(stars.len() > 60, "{} twinkling stars", stars.len());
+        let (mx, my, r) = (s(MOON.0), s(MOON.1), s(MOON.2));
+        for st in &stars {
+            let (tx, ty) = (st.x / (TILE * K), st.y / (TILE * K));
+            assert_eq!(level.tile(tx, ty), Tile::Empty, "star in rock at {st:?}");
+            let (dx, dy) = (st.x - mx, st.y - my);
+            assert!(dx * dx + dy * dy > r * r, "star on the moon at {st:?}");
+        }
+    }
 }

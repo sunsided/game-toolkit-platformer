@@ -5,16 +5,20 @@
 //! the [`Animator`] in that order, so the animation is as deterministic as the movement.
 
 pub mod clock;
+pub mod foliage;
 pub mod fx;
+pub mod wind;
 
 use std::collections::VecDeque;
 
 use crate::anim::{AnimEvent, Animator, Driver};
-use crate::hero::rig::Rig;
+use crate::hero::rig::{Air, Rig};
 use crate::hero::{HeroDriver, graph};
 use crate::sim::{DT, Event, Intent, Level, Mode, Preset, Tuning, World, player};
 pub use clock::Clock;
+pub use foliage::Foliage;
 pub use fx::{Fx, FxColor};
+pub use wind::Wind;
 
 /// Lines kept in the event log (the overlay's bottom-left corner).
 const LOG: usize = 6;
@@ -101,6 +105,8 @@ pub struct Session {
     pub rig: Rig,
     /// How the game is drawn.
     pub skin: Skin,
+    /// Moss and grass, swaying and brushed aside.
+    pub foliage: Foliage,
 }
 
 impl Session {
@@ -114,6 +120,7 @@ impl Session {
     /// A session on `level` with `tuning`.
     pub fn with(level: Level, tuning: Tuning) -> Self {
         let world = World::new(level, tuning);
+        let foliage = Foliage::grow(&world.level);
         let animator = Animator::new(graph());
         let driver = HeroDriver::new(&animator.params);
         Self {
@@ -129,6 +136,7 @@ impl Session {
             last_intent: Intent::default(),
             preset: None,
             rig: Rig::default(),
+            foliage,
             skin: Skin::Mouse,
         }
     }
@@ -194,7 +202,15 @@ impl Session {
         let p = &self.world.player;
         let (x, y) = p.exact_pos();
         let sprite = self.animator.sprite();
-        self.rig.step(x, y, sprite, p.facing, (p.vx, p.vy), DT);
+        let wind = Wind::at(self.world.tick, y);
+        let air = Air {
+            breeze: wind.breeze,
+            gust: wind.push,
+        };
+        self.rig.step(x, y, sprite, p.facing, (p.vx, p.vy), air, DT);
+        let p = &self.world.player;
+        self.foliage
+            .step(self.world.tick, p.rect(), (p.vx, p.vy), DT);
         self.fx.retain_mut(|f| f.tick(DT));
         self.effects();
     }
@@ -206,6 +222,20 @@ impl Session {
         let mid = feet - player::H as f32 / 2.0;
         let tick = self.world.tick;
         for e in &self.world.events {
+            // What she does pushes the plants around her.
+            let shove = match *e {
+                Event::Landed { drop, .. } => Some((10.0, 1.0 + drop as f32 * 0.06)),
+                Event::RollStarted => Some((8.0, 3.0)),
+                Event::Dashed { .. } => Some((10.0, 4.0)),
+                Event::DiveImpact { .. } => Some((20.0, 7.0)),
+                Event::SuperDashStarted { .. } | Event::SuperDashEnded { bonk: true } => {
+                    Some((14.0, 5.0))
+                }
+                _ => None,
+            };
+            if let Some((radius, strength)) = shove {
+                self.foliage.shove(cx, feet - 1.0, radius, strength);
+            }
             match *e {
                 Event::Recharged { crystal: true } => {
                     self.fx.push(ring(cx, mid, 14.0, 0.3, FxColor::Recharge));
@@ -259,9 +289,16 @@ impl Session {
             });
         }
         for e in self.animator.drain_events() {
-            if let AnimEvent::Entered(s) = e {
-                let name = &self.animator.graph().state(s).name;
-                self.log.push_back((tick, format!("-> {name}")));
+            match e {
+                AnimEvent::Entered(s) => {
+                    let name = &self.animator.graph().state(s).name;
+                    self.log.push_back((tick, format!("-> {name}")));
+                }
+                // The animation controller's footstep markers rustle the grass underfoot.
+                AnimEvent::Marker(m) if &*m == "step" => {
+                    self.foliage.shove(cx, feet - 1.0, 4.0, 1.5);
+                }
+                _ => {}
             }
         }
         while self.log.len() > LOG {

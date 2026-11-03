@@ -12,11 +12,11 @@ pub mod debug;
 pub mod hero;
 pub mod mouse;
 
-pub use backdrop::{backdrop, plain};
+pub use backdrop::{Twinkle, backdrop, plain, twinkles};
 pub use mouse::Paint;
 
-use crate::gfx::{Raster, bayer, palette as pal};
-use crate::session::{Fx, FxColor, Session, Skin};
+use crate::gfx::{H, Raster, W, bayer, palette as pal};
+use crate::session::{Fx, FxColor, Session, Skin, Wind};
 use crate::sim::{Mode, Rect, TILE, player};
 
 /// Screen pixels per simulation unit.
@@ -34,8 +34,12 @@ fn px(r: Rect) -> Rect {
     }
 }
 
-/// Draw everything that moves: cheese, crates, effects, the heroine, the overlay.
-pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
+/// Draw everything that moves: twinkling `stars` (from [`twinkles`]), cheese, crates,
+/// effects, the heroine, the overlay.
+pub fn scene(r: &mut dyn Raster, s: &Session, stars: &[Twinkle], clock: f32) {
+    if s.skin == Skin::Mouse {
+        twinkle(r, stars, clock);
+    }
     for c in &s.world.crystals {
         let a = px(c.area);
         let (cx, cy) = (a.x + TILE * K / 2, a.y + TILE * K / 2);
@@ -62,6 +66,10 @@ pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
         }
         crate_box(r, q);
     }
+    if s.skin == Skin::Mouse {
+        gusts(r, s);
+        plants(r, s, true);
+    }
     for f in &s.fx {
         effect(r, f, s);
     }
@@ -79,8 +87,10 @@ pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
             let flash = charge >= 1.0 && s.world.tick % 8 < 3;
             // Charging, crystal light seeps into her as the charge builds.
             let glow = (charge > 0.0).then_some((pal::CRYSTAL, 0.15 + charge * 0.45));
+            let wind = Wind::at(s.world.tick, sy);
             let paint = Paint {
                 t: s.world.tick as f32 / 120.0,
+                flutter: 1.0 + wind.gust * 0.5,
                 spent,
                 tint: flash.then_some(pal::WHITE),
                 glow,
@@ -93,7 +103,38 @@ pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
             hero::draw(r, x, y, sprite, p.facing, tint, 1.0);
         }
     }
+    if s.skin == Skin::Mouse {
+        // Grass in front of her feet.
+        plants(r, s, false);
+    }
     debug::draw(r, s);
+}
+
+/// Moss (`hanging`) or grass: a stalk from the root to the tip, curled a bit more toward
+/// the end, with a lighter leaf or tip pixel.
+fn plants(r: &mut dyn Raster, s: &Session, hanging: bool) {
+    let (stalk, leaf) = if hanging {
+        (pal::MOSS, pal::MOSS_LT)
+    } else {
+        (pal::GRASS, pal::GRASS_LT)
+    };
+    for sp in s.foliage.sprigs.iter().filter(|sp| sp.hangs == hanging) {
+        let up = if hanging { 1.0 } else { -1.0 };
+        // Two segments: the outer one bends further, so a swaying strand curls.
+        let half = sp.len / 2.0;
+        let (s1, c1) = (sp.angle * 0.6).sin_cos();
+        let mid = (sp.x + s1 * half, sp.y + up * c1 * half);
+        let (s2, c2) = (sp.angle * 1.4).sin_cos();
+        let tip = (mid.0 + s2 * half, mid.1 + up * c2 * half);
+        let p = |q: (f32, f32)| ((q.0 * KF) as i32, (q.1 * KF) as i32);
+        let (a, b, c) = (p((sp.x, sp.y)), p(mid), p(tip));
+        r.line(a.0, a.1, b.0, b.1, stalk);
+        r.line(b.0, b.1, c.0, c.1, stalk);
+        r.put(c.0, c.1, leaf);
+        if hanging && sp.len > 6.0 {
+            r.put(b.0 + 1, b.1, leaf);
+        }
+    }
 }
 
 /// The super dash's charge, drawn around the hero at `pos` (units): crystal shards
@@ -144,6 +185,45 @@ fn charge(r: &mut dyn Raster, s: &Session, pos: (f32, f32)) -> f32 {
         }
     }
     full
+}
+
+/// Streaks of air blowing across the sky in a gust, thicker the stronger it is; from the
+/// moon's side, right to left, like the breeze.
+fn gusts(r: &mut dyn Raster, s: &Session) {
+    let wind = Wind::at(s.world.tick, s.world.player.y as f32);
+    if wind.gust <= 0.05 {
+        return;
+    }
+    let t = s.world.tick as f32 / 120.0;
+    for i in 0..8 {
+        let row = (backdrop::hash(i, 90) % (H as u32 * 2 / 3)) as i32;
+        let speed = 160.0 + (backdrop::hash(i, 91) % 120) as f32;
+        let len = 4 + (backdrop::hash(i, 92) % 8) as i32;
+        let span = (W + 40) as f32;
+        let x = (W as f32 - (t * speed + (backdrop::hash(i, 93) % 400) as f32) % span) as i32;
+        let wobble = ((t * 3.0 + i as f32).sin() * 1.5) as i32;
+        // Translucent, so they read as moving air rather than dots or lines.
+        r.span(x, x + len * K, row + wobble, pal::STAR, 0.18 * wind.gust);
+    }
+}
+
+/// Stars brighten and dim, each on its own slow rhythm; near the top of its swell a bright
+/// one shows a faint cross of glints. Subtle: a fraction of a pixel's worth either way.
+fn twinkle(r: &mut dyn Raster, stars: &[Twinkle], clock: f32) {
+    for st in stars {
+        let v = (clock * st.speed + st.phase).sin();
+        if v > 0.55 {
+            let a = (v - 0.55) / 0.45 * (0.25 + 0.35 * st.bright);
+            r.blend(st.x, st.y, pal::WHITE, a);
+            if v > 0.93 && st.bright > 0.85 {
+                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
+                    r.blend(st.x + dx, st.y + dy, pal::STAR, a * 0.6);
+                }
+            }
+        } else if v < -0.6 {
+            r.blend(st.x, st.y, pal::SKY_1, (-v - 0.6) / 0.4 * 0.45);
+        }
+    }
 }
 
 /// A wooden crate in `q` (screen pixels): a frame, planks, an X brace, a lit top edge.

@@ -49,6 +49,8 @@ pub struct App {
     triggers: Triggers,
     /// The look the backdrop texture was drawn for; F3 switches it.
     drawn_for: Skin,
+    /// The backdrop's visible stars, which twinkle.
+    stars: Vec<render::Twinkle>,
 }
 
 impl App {
@@ -81,6 +83,7 @@ impl Game for App {
     fn init(ctx: &mut Context) -> Result<Self> {
         let session = Session::new();
         let backdrop = render::backdrop(&session.world.level);
+        let stars = render::twinkles(&backdrop);
         let mut rgba = vec![0; (W * H * 4) as usize];
         backdrop.to_rgba(&mut rgba);
         let tex = ctx
@@ -97,6 +100,7 @@ impl Game for App {
             },
             triggers: Triggers::default(),
             drawn_for: Skin::Mouse,
+            stars,
         })
     }
 
@@ -124,10 +128,11 @@ impl Game for App {
             let mut rgba = vec![0; (W * H * 4) as usize];
             canvas.to_rgba(&mut rgba);
             ctx.gfx.update_texture_rgba(self.tex, &rgba);
+            self.stars = render::twinkles(&canvas);
             self.drawn_for = self.session.skin;
         }
         self.draw.clear();
-        render::scene(&mut self.draw, &self.session, self.clock);
+        render::scene(&mut self.draw, &self.session, &self.stars, self.clock);
         let (ww, wh) = ctx.gfx.size();
         let vp = Viewport::fit(ww, wh);
         let mut p = frame.painter(&mut ctx.gfx);

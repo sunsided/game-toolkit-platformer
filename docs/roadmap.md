@@ -22,6 +22,9 @@
   wedges for crystals; `task poses`
 - [x] Her bearing from the paintings (stance, wild mane, sword-raise fidget), a readable
   super dash charge, the moonlit scene; F3 for the diagnostic look
+- [x] Wind for mane, headband and cape: height, facing, gusts
+- [x] Twinkling stars; moss and grass that sway in the wind and react to her (footstep
+  markers, landings, dashes)
 
 ## Next
 

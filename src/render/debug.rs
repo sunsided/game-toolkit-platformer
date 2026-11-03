@@ -120,6 +120,11 @@ fn body(r: &mut dyn Raster, s: &Session, full: bool) {
         ),
     ];
     if full {
+        let w = crate::session::Wind::at(s.world.tick, p.y as f32);
+        lines.push((
+            format!("BREEZE {:.0} GUST {:+.0} {:.2}", w.breeze, w.push.0, w.gust),
+            pal::STEEL_LT,
+        ));
         let hist: Vec<String> = a
             .history()
             .map(|(id, secs)| format!("{}{:.0}", a.graph().state(id).name, secs * 1000.0))
