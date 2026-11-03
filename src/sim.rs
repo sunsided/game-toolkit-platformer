@@ -106,7 +106,7 @@ impl World {
 
     /// Pixels of the game's terrain per unit: 1 for a world stepped on its own, `k` under a
     /// [`crate::Platformer`] with a `Builder::scale(k)`. Abilities get it as
-    /// [`Step::scale`], to ask a terrain they [`find`](Terrain::find) in its pixels.
+    /// [`Step::scale`], to ask a terrain they [`find`](trait.Terrain.html#method.find) in its pixels.
     pub fn scale(&self) -> i32 {
         self.scale
     }

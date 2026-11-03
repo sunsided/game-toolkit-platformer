@@ -65,8 +65,9 @@ tasks:
       - cargo clippy --workspace --all-targets -- -D warnings
 
   check:
-    desc: fmt --check and clippy -D warnings (run before calling it done)
+    desc: fmt --check, clippy -D warnings and docs without broken links (run before calling it done)
     cmds:
       - cargo fmt --all --check
       - cargo clippy --workspace --all-targets -- -D warnings
       - cargo clippy -p game-toolkit-platformer --lib --no-default-features -- -D warnings
+      - RUSTDOCFLAGS="-D warnings" cargo doc -p game-toolkit-platformer --no-deps

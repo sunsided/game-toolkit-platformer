@@ -152,6 +152,6 @@ The extension API (`Platformer`, `Terrain`, `Level`, `Ability`) is stable apart 
 
 ## License
 
-EUPL-1.2.
+EUPL-1.2, see [LICENSE](LICENSE).
 
 This is an independent project, not affiliated with or endorsed by the makers of the games it mentions for comparison; their names belong to their owners.

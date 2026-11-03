@@ -31,7 +31,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-publish = false
+repository = "https://github.com/sunsided/game-toolkit-platformer"
+documentation = "https://docs.rs/game-toolkit-platformer"
+readme = "README.md"
+# The crate is the library: the agent guide, the task runner, the demo and the art (the
+# README links it in the repository) stay in the repo.
+include = ["/src", "/examples", "/docs/*.md", "/README.md", "/LICENSE", "/Cargo.toml"]
 
 [features]
 default = ["toolkit"]

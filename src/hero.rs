@@ -1,5 +1,5 @@
 //! The hero's binding to the animation controller: which sprites exist ([`sprite`]), the
-//! state graph over them ([`graph`]), and the [`HeroDriver`] that turns the simulation into
+//! state graph over them ([`graph`](mod@graph)), and the [`HeroDriver`] that turns the simulation into
 //! the graph's parameters.
 //!
 //! Nothing here is required by [`crate::anim`]; another character is another binding.

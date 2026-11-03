@@ -3,14 +3,14 @@
 //! [`Player::step`] runs the abilities in a fixed order, each in its own module:
 //!
 //! 1. timers: jump and dash buffers, coyote time, refills on the ground, mode clocks
-//! 2. [`dash`](self::dash): start a buffered dash (8-way, from the stick)
-//! 3. [`dive`](self::dive): start a dive in the air; the dive's own motion
-//! 4. [`climb`](self::climb): grab, climb, hop over the top, run out of stamina
+//! 2. `dash`: start a buffered dash (8-way, from the stick)
+//! 3. `dive`: start a dive in the air; the dive's own motion
+//! 4. `climb`: grab, climb, hop over the top, run out of stamina
 //! 5. running (horizontal speed by mode)
-//! 6. [`jump`](self::jump): ground, coyote, roll, wall, climb and air jumps; drop-through
+//! 6. `jump`: ground, coyote, roll, wall, climb and air jumps; drop-through
 //! 7. falling: gravity with hangtime, variable jump, jump cut, wall slide
-//! 8. [`collide`](self::collide): move unit by unit, corner correction
-//! 9. [`land`](self::land): landings (plain, roll, hard, dive impact), leaving the ground
+//! 8. `collide`: move unit by unit, corner correction
+//! 9. `land`: landings (plain, roll, hard, dive impact), leaving the ground
 //!
 //! Your own moves hook in before and after through [`super::Ability`].
 
