@@ -1,7 +1,8 @@
 //! Headless filmstrips of the hero's moves, for checking animation without a window:
 //! `cargo run --example snapshot -- [out_dir] [move...]` (or `task snapshot`) plays each
-//! scripted move on the demo level and writes a PNG at 3x: the level, the hero drawn every
-//! few steps along the way (onion skin), and the states the animator went through.
+//! scripted move on the demo level and writes a PNG at 3x: the level, the hero as a faded
+//! silhouette every few steps along the way (onion skin), the final frame in full, and the
+//! states the animator went through.
 //!
 //! This works because nothing below the app layer touches the toolkit: a [`Session`] runs
 //! headless and draws into any raster.
@@ -365,15 +366,14 @@ fn main() {
                 let (x, y) = s.world.player.exact_pos();
                 let p = &s.world.player;
                 let sprite = s.animator.sprite();
-                mouse::draw(
-                    &mut canvas,
-                    x,
-                    y,
-                    sprite,
-                    p.facing,
-                    Some((&s.rig, (0.0, 0.0))),
-                    &Paint::default(),
-                );
+                // Faded silhouettes without cape and mane, so the path reads; the last
+                // frame is drawn in full on top.
+                let ghost = Paint {
+                    tint: Some(pal::PALE),
+                    alpha: 0.55,
+                    ..Paint::default()
+                };
+                mouse::draw(&mut canvas, x, y, sprite, p.facing, None, &ghost);
             }
         }
         // The final frame on top: blocks, crystals, effects, the hero where it ended.
