@@ -1,6 +1,7 @@
-//! [`Rect`]: an integer axis-aligned box in grid pixels.
+//! [`Rect`]: an integer axis-aligned box, in units or in a terrain's pixels.
 
-/// An axis-aligned box: top-left `x, y`, size `w` x `h`, grid pixels.
+/// An axis-aligned box: top-left `x, y`, size `w` x `h`. Units inside the movement, a
+/// terrain's pixels at the facade with a `Builder::scale` (see `docs/scale.md`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
     /// Left edge.
@@ -44,7 +45,7 @@ impl Rect {
         self.y + self.h
     }
 
-    /// Whether the two boxes share any pixel.
+    /// Whether the two boxes overlap (share any unit square).
     pub fn intersects(self, o: Rect) -> bool {
         self.x < o.right() && o.x < self.right() && self.y < o.bottom() && o.y < self.bottom()
     }

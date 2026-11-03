@@ -48,7 +48,7 @@ impl Terrain for Scaled<'_> {
     }
 
     // Every query above is converted; the base is only there so abilities find your
-    // terrain behind this one (`find_mut`).
+    // terrain behind this one (`find_mut`), which answers in pixels (`Step::scale`).
     fn base(&self) -> Option<&dyn Terrain> {
         Some(&*self.inner)
     }

@@ -8,7 +8,7 @@ character's `hitboxes()` against your things, then act through the facade.
 |---|---|---|
 | Spikes, lava, a kill plane | a hitbox overlaps it | `respawn()` (a fresh body at the spawn point, an `Event::Respawned`) |
 | Knockback | a hitbox overlaps an enemy | `launch(vx, vy)`: away from it and up; it isn't cut by releasing jump |
-| A spring, a bounce pad | the feet are on it (`hitbox().bottom() == pad.top`) | `launch(0.0, -speed)`, or make it bouncy ground ([surfaces](surfaces.md)) |
+| A spring, a bounce pad | a hitbox overlaps it | `launch(0.0, -speed)`, or make it bouncy ground ([surfaces](surfaces.md)) |
 | A checkpoint | a hitbox overlaps it | `set_spawn(Spot::Feet(x, floor_y))` |
 | A pickup | a hitbox overlaps it | remove it; `refill()` for dashes, air jumps and stamina |
 | A door, a portal | the hitbox overlaps it and a custom button was pressed | `teleport(spot)` |
@@ -17,8 +17,10 @@ character's `hitboxes()` against your things, then act through the facade.
 
 On a `Level`, mark these with tiles of your own: `Level::parse_with` reads
 `Tile::Custom(n)` from characters you choose, the movement treats them as air, and
-`Level::tiles_touching(hitbox)` lists what the character overlaps. On a terrain of your
-own, keep them however you like and test rects.
+`level.touches(hero.hitboxes(), tile)` gives the first hitbox of the last frame that
+touches one (`Level::tiles_touching(hitbox)` lists them all). On a terrain of your own,
+keep them however you like and test rects with `hero.touched(rect)`. Both return a copy,
+so you can call `respawn()` or `launch()` right away.
 
 Dash refill crystals are the one pickup the terrain does handle (`Terrain::refill`):
 the movement decides when one is used (only when a dash has been spent), so it asks.
@@ -69,21 +71,17 @@ let mut hero = Platformer::on(&level, Preset::Hybrid);
 let start = hero.hitbox();
 
 let mut respawned = false;
-'frames: for _ in 0..120 {
+for _ in 0..120 {
     hero.advance(Intent { move_x: 1.0, ..Intent::default() }, &mut level, 1.0 / 60.0);
-    for r in hero.hitboxes().to_vec() {
-        let touching: Vec<Tile> = level.tiles_touching(r).map(|(_, _, t)| t).collect();
-        if touching.contains(&Tile::Custom(SPIKES)) {
-            hero.respawn();
-            respawned = true;
-            break 'frames;
-        }
-        if touching.contains(&Tile::Custom(CHECKPOINT)) {
-            hero.set_spawn(Spot::Feet(r.x + r.w / 2, r.bottom()));
-        }
+    if level.touches(hero.hitboxes(), Tile::Custom(SPIKES)).is_some() {
+        hero.respawn();
+        respawned = true;
+        break;
     }
-    let feet = hero.hitbox();
-    if level.tiles_touching(feet).any(|(_, _, t)| t == Tile::Custom(SPRING)) && hero.grounded() {
+    if let Some(r) = level.touches(hero.hitboxes(), Tile::Custom(CHECKPOINT)) {
+        hero.set_spawn(Spot::Feet(r.x + r.w / 2, r.bottom()));
+    }
+    if level.touches(hero.hitboxes(), Tile::Custom(SPRING)).is_some() {
         hero.launch(0.0, -320.0);
     }
 }
@@ -107,7 +105,7 @@ for k in 0..8 {
     let intent = if k == 0 { dash } else { Intent { move_x: 1.0, ..Intent::default() } };
     hero.advance(intent, &mut floor, 1.0 / 15.0);
     by_frame |= hero.hitbox().intersects(trigger);
-    by_step |= hero.hitboxes().iter().any(|r| r.intersects(trigger));
+    by_step |= hero.touched(trigger).is_some();
 }
 assert!(by_step, "caught in a step between frames");
 assert!(!by_frame, "the frames alone miss it");

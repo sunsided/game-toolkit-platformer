@@ -104,7 +104,7 @@ fn slow_motion_does_not_drop_presses() {
             },
             &Keys::default(),
         );
-        jumped |= !s.world.player.grounded;
+        jumped |= !s.world.player.grounded();
     }
     assert!(jumped);
 }
@@ -131,7 +131,7 @@ fn running_into_a_wall_settles_instead_of_restarting_the_run() {
     };
     // From the spawn to the level's left wall, and on into it.
     states(&mut s, left, 240);
-    assert!(s.world.player.grounded && s.world.player.wall(&s.stage, -1));
+    assert!(s.world.player.grounded() && s.world.player.wall(&s.stage, -1));
     // Long enough for an idle fidget: she keeps pushing against it instead.
     let seen = states(&mut s, left, 1200);
     assert_eq!(seen, ["push"], "one state against the wall");

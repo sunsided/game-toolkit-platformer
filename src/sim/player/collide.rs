@@ -1,4 +1,4 @@
-//! Moving through the level pixel by pixel: walls, floors, one-way platforms, ceilings and
+//! Moving through the level unit by unit: walls, floors, one-way platforms, ceilings and
 //! corner corrections.
 
 use super::Player;
@@ -12,7 +12,7 @@ impl Player {
         level.solid(r.shifted(0, 1)) || (self.drop_through <= 0.0 && level.platform(r))
     }
 
-    /// Whether falling with something to stand on within `px` pixels below.
+    /// Whether falling with something to stand on within `px` units below.
     pub(super) fn ground_below(&self, level: &dyn Terrain, px: i32) -> bool {
         self.vy > 0.0
             && (0..px).any(|d| {
@@ -21,7 +21,7 @@ impl Player {
             })
     }
 
-    /// Move `amount` pixels sideways, one pixel at a time. Returns whether a wall stopped
+    /// Move `amount` units sideways, one at a time. Returns whether a wall stopped
     /// it.
     pub(super) fn move_x(&mut self, level: &dyn Terrain, amount: f32) -> bool {
         self.rem_x += amount;
@@ -99,8 +99,8 @@ impl Player {
         }
     }
 
-    /// Move `amount` pixels vertically, one pixel at a time. Going up into a ceiling
-    /// corner, the head is nudged up to `corner` pixels sideways around it; otherwise a
+    /// Move `amount` units vertically, one at a time. Going up into a ceiling
+    /// corner, the head is nudged up to `corner` units sideways around it; otherwise a
     /// ceiling stops the jump, and the floor (or a platform) stops the fall.
     pub(super) fn move_y(
         &mut self,
@@ -144,8 +144,8 @@ impl Player {
         }
     }
 
-    /// The smallest sideways shift (up to `max` pixels, the moving direction first) that
-    /// lets the head pass a ceiling corner one pixel up.
+    /// The smallest sideways shift (up to `max` units, the moving direction first) that
+    /// lets the head pass a ceiling corner one unit up.
     fn corner_nudge(&self, level: &dyn Terrain, max: i32) -> Option<i32> {
         let first = if self.vx < 0.0 { -1 } else { 1 };
         (1..=max).flat_map(|d| [d * first, -d * first]).find(|&dx| {

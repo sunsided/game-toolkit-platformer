@@ -38,7 +38,7 @@ in `World::abilities` (or `Builder::ability`), not by forking `sim/player`:
   reaches your own terrain (through any wrappers whose `base` it is) to break a block or
   flip a switch, and the movement sees the change in the same step. They report
   `Event::Custom { id, data }` (`Event::custom(id).with([..])`: up to four numbers, a
-  knockback or a hit target). In `after`, `player.contacts` says what the body ran into
+  knockback or a hit target). In `after`, `player.contacts()` says what the body ran into
   (a wall, a ceiling, the floor); in a `Party`, `step.others` holds the other bodies.
 - **Ids**: name modes and events with a `CustomId::new("my_crate::lunge")`, a hash of the
   name worked out at compile time: abilities from different crates never have to agree
@@ -58,8 +58,49 @@ in `World::abilities` (or `Builder::ability`), not by forking `sim/player`:
   read nothing from outside.
 - **Animation**: an ability that also implements `Animate` drives its own animation
   parameters from its own state (`Builder::animated`, `Platformer::add_animated`): one
-  registration for the move and its look. `World::ability::<T>()` reads any ability's
+  registration for the move and its look. It lists what it writes in `Animate::PARAMS`
+  (name and kind), checked against the graph when the character is built, a graph is
+  swapped or the ability is added, and `drive` gets their ids in that order: no lookups
+  by name per step, no panic on a typo. `World::ability::<T>()` reads any ability's
   state, for a driver or the game.
+- **Event data**: `Event::Custom` carries at most four `f32`s, so events stay `Copy` and
+  draining them never allocates. For more (a list of hit targets, a name), keep it in the
+  ability's state and send only the event: the game reads the rest with
+  `Platformer::ability::<T>()` when the event arrives.
+- **Abilities for other games**: a crate shipping an ability can't know which custom
+  button is free, so it takes the bit when it's made and keeps it, and names its ids
+  after itself:
+
+  ```rust
+  use game_toolkit_platformer::sim::{Ability, CustomId, Step};
+
+  /// Pogo off the ground below while `button` is pressed in the air.
+  #[derive(Clone, Debug)]
+  pub struct Pogo {
+      /// The game's custom button for it (an `Intent::custom` bit).
+      button: u8,
+  }
+
+  impl Pogo {
+      /// The id of its events.
+      pub const ID: CustomId = CustomId::new("pogo_crate::pogo");
+
+      /// A pogo on custom button `button`.
+      pub fn on(button: u8) -> Self {
+          Self { button }
+      }
+  }
+
+  impl Ability for Pogo {
+      fn after(&mut self, s: &mut Step<'_>) {
+          if s.intent.pressed(self.button) && !s.player.grounded() && s.player.vy > 0.0 {
+              s.player.launch(s.player.vx, -180.0);
+          }
+      }
+  }
+
+  let _ = game_toolkit_platformer::Platformer::builder().ability(Pogo::on(2));
+  ```
 
 ## Abilities
 

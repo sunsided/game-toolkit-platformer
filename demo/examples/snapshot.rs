@@ -87,7 +87,7 @@ fn bounce(k: usize, w: &Session, aim: f32) -> Intent {
     Intent {
         move_x: x,
         jump_pressed: k == 5
-            || (side != 0 && w.world.player.vy > -30.0 && !w.world.player.grounded),
+            || (side != 0 && w.world.player.vy > -30.0 && !w.world.player.grounded()),
         jump_held: true,
         ..Intent::default()
     }
@@ -192,7 +192,7 @@ const SCRIPTS: &[Script] = &[
         at: Some((15 * TILE, LID_A - player::H)),
         steps: 160,
         intent: |k, w| {
-            if k < 5 || w.world.player.grounded {
+            if k < 5 || w.world.player.grounded() {
                 go(-1.0)
             } else {
                 Intent::default()
@@ -365,10 +365,7 @@ fn main() {
             s.preset = Some(p);
         }
         if let Some((x, y)) = sc.at {
-            let p = &mut s.world.player;
-            p.x = x;
-            p.y = y;
-            p.peak_y = y;
+            s.world.player.teleport(x, y);
         }
         let mut canvas = backdrop(&s.stage.level);
         let mut seen: Vec<String> = Vec::new();

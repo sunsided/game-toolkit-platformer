@@ -135,10 +135,10 @@ fn body(r: &mut dyn Raster, s: &Session, full: bool) {
     }
     // Room for the meters below the text.
     let meters = [
-        ("J", p.buffer / t.jump_buffer, pal::YELLOW),
-        ("C", p.coyote / t.coyote_time, pal::GREEN),
-        ("D", p.dash_buffer / t.dash_buffer, pal::YELLOW),
-        ("V", p.var_jump / t.var_jump_time, pal::CYAN),
+        ("J", p.buffer() / t.jump_buffer, pal::YELLOW),
+        ("C", p.coyote() / t.coyote_time, pal::GREEN),
+        ("D", p.dash_buffer() / t.dash_buffer, pal::YELLOW),
+        ("V", p.var_jump() / t.var_jump_time, pal::CYAN),
         ("S", p.stamina / t.stamina, pal::GREEN),
     ];
     let meter_w = 14;

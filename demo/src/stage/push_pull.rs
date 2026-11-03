@@ -37,7 +37,7 @@ impl PushPull {
     /// Her hold on a box this step, and which box: within two units on either side, while
     /// standing on the ground and moving freely.
     fn shove(stage: &Stage, p: &Player, i: &Intent) -> Option<(Shove, usize)> {
-        if !p.grounded || p.mode != Mode::Normal {
+        if !p.grounded() || p.mode != Mode::Normal {
             return None;
         }
         let mx = if i.move_x.abs() > 0.3 {

@@ -1,6 +1,7 @@
-//! [`Tuning`]: every number that shapes how the hero moves. Grid pixels and seconds.
+//! [`Tuning`]: every number that shapes how the hero moves. Units and seconds
+//! (the movement's space: pixels at a scale of 1; see `docs/scale.md`).
 //!
-//! The defaults ([`Preset::Hybrid`]) sit near Celeste's (same 8 px tiles: run, jump,
+//! The defaults ([`Preset::Hybrid`]) sit near Celeste's (same 8-unit tiles: run, jump,
 //! dash, climb), with Hollow Knight's heavier fall, jump cut, double jump, dive and landing
 //! roll mixed in. The other [`Preset`]s lean all the way toward one game's feel; abilities
 //! a preset doesn't have are switched off (zero counts, false flags, unreachable drops).
@@ -139,7 +140,8 @@ impl Preset {
     }
 }
 
-/// The movement feel. All speeds px/s, accelerations px/s², times seconds.
+/// The movement feel. All lengths in units, speeds units/s, accelerations units/s², times
+/// seconds.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Tuning {
     /// The hitbox's width and height in units (default 6x12, [`super::player::W`] x
@@ -199,7 +201,7 @@ pub struct Tuning {
     pub double_jump_speed: f32,
     /// Hold window of an air jump, like [`Tuning::var_jump_time`].
     pub double_var_jump_time: f32,
-    /// Falling with ground this many pixels below, a jump press waits for the landing
+    /// Falling with ground this many units below, a jump press waits for the landing
     /// (a queued ground jump) instead of spending the air jump.
     pub land_jump_lookahead: i32,
 
@@ -254,7 +256,7 @@ pub struct Tuning {
     pub wall_jump_speed: f32,
     /// Seconds after a wall jump during which the stick can't pull back to the wall.
     pub wall_jump_lock: f32,
-    /// A wall this many pixels away still counts for a wall jump.
+    /// A wall this many units away still counts for a wall jump.
     pub wall_jump_reach: i32,
     /// Horizontal speed of a wall jump made holding toward the wall: small, so the hero
     /// arcs back onto the same wall (Hollow Knight, Super Meat Boy). Equal to
@@ -307,7 +309,7 @@ pub struct Tuning {
     /// How long a dive's impact takes away control.
     pub dive_land_time: f32,
 
-    /// Fall height in pixels from which a landing while moving becomes a roll.
+    /// Fall height in units from which a landing while moving becomes a roll.
     pub roll_drop: i32,
     /// Roll speed (the roll keeps any faster speed it lands with).
     pub roll_speed: f32,
@@ -315,12 +317,12 @@ pub struct Tuning {
     pub roll_time: f32,
     /// Seconds into a roll before it can be cancelled into a jump.
     pub roll_jump_after: f32,
-    /// Fall height in pixels from which a landing without moving is a hard landing.
+    /// Fall height in units from which a landing without moving is a hard landing.
     pub hard_land_drop: i32,
     /// How long a hard landing takes away control.
     pub hard_land_time: f32,
 
-    /// Pixels the head may be nudged sideways around a ceiling corner.
+    /// Units the head may be nudged sideways around a ceiling corner.
     pub corner_correction: i32,
 
     /// How much of the speed of moving ground (or a moving wall held) a jump off it keeps:

@@ -94,7 +94,7 @@ let mut hero = Platformer::at(Spot::Feet(40, 200), Preset::Snappy);
 hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
 ```
 
-The other methods are optional: one-way platforms, dash refills, falling out of the world, surfaces (ice, conveyors, walls you can't climb, bouncy pads: [surfaces](docs/surfaces.md)), a per-step `tick` and `carry` for moving ground. `Level` is a ready-made `Terrain`: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `P` spawn), `Level::from_fn` builds one from your tilemap, and `Level::parse_with` adds tiles of your own (spikes, water, goals) that the movement treats as air unless `Level::define` makes them solid or one-way platforms. To add doors, lifts or boxes, wrap a terrain and name it as the `base` with `terrain_layer!(level)` (required, so a wrapper can't silently lose its base): you write only what changes ([moving platforms](docs/moving-platforms.md) is a recipe). With 16-pixel tiles, `Builder::scale(2)` lets your terrain speak pixels.
+The other methods are optional: one-way platforms, dash refills, falling out of the world, surfaces (ice, conveyors, walls you can't climb, bouncy pads: [surfaces](docs/surfaces.md)), a per-step `tick` and `carry` for moving ground. `Level` is a ready-made `Terrain`: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `P` spawn), `Level::from_fn` builds one from your tilemap, and `Level::parse_with` adds tiles of your own (spikes, water, goals) that the movement treats as air unless `Level::define` makes them solid or one-way platforms. To add doors, lifts or boxes, wrap a terrain and name it as the `base` with `terrain_layer!(level)` (required, so a wrapper can't silently lose its base): you write only what changes ([moving platforms](docs/moving-platforms.md) is a recipe). A tilemap of your own implements `Grid` (tile size, and what each tile is) and steps as `GridTerrain(&map)`, with platforms and surfaces by `Level`'s rules. A terrain that borrows your map (`View<'a>`) writes `terrain_layer!(borrowed)` or `terrain_layer!(borrowed level)`. With 16-pixel tiles, `Builder::scale(2)` lets your terrain speak pixels ([which API speaks which](docs/scale.md)).
 
 ## Drawing your character
 
@@ -145,6 +145,10 @@ You'll need Rust 1.95 or newer and [go-task](https://taskfile.dev) (or plain `ca
 - Graphs and tunings are written in code; loading them from files (and hot-reloading) is next.
 - A sprite sheet adapter (sprite numbers to Aseprite tags) isn't there yet; `draw_debug` and the demo's puppet are the two looks so far.
 - No attack move, no camera.
+
+## Stability
+
+The extension API (`Platformer`, `Terrain`, `Level`, `Ability`) is stable apart from additions: breaking changes come only with a new major version.
 
 ## License
 

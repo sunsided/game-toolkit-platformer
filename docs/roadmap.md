@@ -46,6 +46,17 @@
   animation hooks found by type, `remove_ability`, `ability`/`contacts`/`tuning`
   accessors and a private `world` (`world()`/`world_mut()`), `Level` behind methods
   (`add_refill` at its tile size, `set_spawn_tile`, `find`), custom one-way platforms
+- [x] Stable extension API: `terrain_layer!(borrowed)` for terrains that borrow,
+  `Level::touches` and `Platformer::touched` for hazards, events in pixels under
+  `Builder::scale` ([pixels and units](scale.md)), runtime key rebinding
+  (`Scheme::bind`), `Terrain::find`, a narrowed `Player` (the movement's own state behind
+  getters) with `set_velocity`/`set_facing`, and `examples/tilemap.rs`, a second game on
+  the public API only. From here on the `Platformer` / `Terrain` / `Level` / `Ability`
+  shape changes only by additions (semver).
+- [x] Dogfood follow-ups: `Grid` and `GridTerrain` for tilemaps of your own (`Level`'s
+  platform and surface rules, shared), `Step::scale` for abilities asking a found
+  terrain in its pixels, `Animate::PARAMS` checked when the graph is built (ids handed
+  to `drive`), unit names in the `Player` and `Tuning` docs.
 
 ## Next
 
@@ -61,7 +72,7 @@
 - [ ] Lab: record intents, rewind and replay (determinism already holds)
 - [ ] The demo's boxes in a `Party`: one grip per stage, and a shoved box is stopped by
   the terrain and the shover only
-- [ ] More moves: ledge grab, crouch and slide (`Player::h` can change; check room to stand), super/hyper dashes, wall-jump coyote time,
+- [ ] More moves: ledge grab, crouch and slide (an ability needs a way to change the hitbox height; check room to stand), super/hyper dashes, wall-jump coyote time,
   swimming and underwater diving
 - [ ] Camera with look-ahead and larger levels (looking up/down pans it, as in Hollow
   Knight)

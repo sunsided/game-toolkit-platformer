@@ -16,7 +16,8 @@
 
 use std::collections::BTreeMap;
 
-use super::{Crystal, CustomTile, Hold, Rect, Spot, Surface, Terrain};
+use super::grid::LevelGrid;
+use super::{Crystal, CustomTile, Grid, Hold, Rect, Spot, Surface, Terrain};
 
 /// The default tile size in units (see [`Level::tile_size`]).
 pub const TILE: i32 = 8;
@@ -334,67 +335,55 @@ impl Level {
         (ty0..=ty1).flat_map(move |ty| (tx0..=tx1).map(move |tx| (tx, ty, self.tile(tx, ty))))
     }
 
+    /// The first of `hitboxes` that touches a `tile`, if any: pass
+    /// [`Platformer::hitboxes`](crate::Platformer::hitboxes) to test every step of the last
+    /// frame. The result is a copy, so you can act on the character right away:
+    /// `if level.touches(hero.hitboxes(), SPIKES).is_some() { hero.respawn(); }`.
+    pub fn touches(&self, hitboxes: &[Rect], tile: Tile) -> Option<Rect> {
+        hitboxes
+            .iter()
+            .copied()
+            .find(|&r| self.tiles_touching(r).any(|(_, _, t)| t == tile))
+    }
+
+    /// What tile `tx, ty` is to the movement: [`Tile::Solid`] and [`Tile::Platform`] as
+    /// plain ground, a custom tile as [`Level::define`]d, the rest air.
+    pub(crate) fn tile_kind(&self, tx: i32, ty: i32) -> CustomTile {
+        match self.tile(tx, ty) {
+            Tile::Solid => CustomTile::solid(Surface::DEFAULT),
+            Tile::Platform => CustomTile::platform(Surface::DEFAULT),
+            Tile::Custom(id) => self.custom_tile(id),
+            Tile::Empty => CustomTile::default(),
+        }
+    }
+
     /// Whether tile `tx, ty` is solid: [`Tile::Solid`], or a custom tile
     /// [`Level::define`]d solid.
     pub fn solid_tile(&self, tx: i32, ty: i32) -> bool {
-        match self.tile(tx, ty) {
-            Tile::Solid => true,
-            Tile::Custom(id) => self.custom_tile(id).hold == Hold::Solid,
-            _ => false,
-        }
+        self.tile_kind(tx, ty).hold == Hold::Solid
     }
 
     /// Whether tile `tx, ty` is a one-way platform: [`Tile::Platform`], or a custom tile
     /// [`Level::define`]d one.
     pub fn platform_tile(&self, tx: i32, ty: i32) -> bool {
-        match self.tile(tx, ty) {
-            Tile::Platform => true,
-            Tile::Custom(id) => self.custom_tile(id).hold == Hold::Platform,
-            _ => false,
-        }
-    }
-
-    /// The surface of tile `tx, ty`, if it holds the character (solid or a platform).
-    fn tile_surface(&self, tx: i32, ty: i32) -> Option<Surface> {
-        match self.tile(tx, ty) {
-            Tile::Solid | Tile::Platform => Some(Surface::DEFAULT),
-            Tile::Custom(id) => {
-                let c = self.custom_tile(id);
-                (c.hold != Hold::Air).then_some(c.surface)
-            }
-            _ => None,
-        }
+        self.tile_kind(tx, ty).hold == Hold::Platform
     }
 
     /// The surface `r` touches (the row under the feet, the column beside a wall): of the
     /// holding tile under `r`'s center if there is one, else of the first holding tile it
-    /// overlaps, else [`Surface::DEFAULT`].
+    /// overlaps, else [`Surface::DEFAULT`]. The same rule as [`Grid::surface_of`].
     pub fn surface_at(&self, r: Rect) -> Surface {
-        let t = self.tile_size;
-        let (cx, cy) = (r.x + r.w / 2, r.y + r.h / 2);
-        if let Some(s) = self.tile_surface(cx.div_euclid(t), cy.div_euclid(t)) {
-            return s;
-        }
-        self.tiles_touching(r)
-            .find_map(|(tx, ty, _)| self.tile_surface(tx, ty))
-            .unwrap_or_default()
+        LevelGrid(self).surface_of(r)
     }
 
     /// Whether `r` overlaps any solid tile (platforms don't count).
     pub fn overlaps(&self, r: Rect) -> bool {
-        let (tx0, ty0, tx1, ty1) = self.tile_span(r);
-        (ty0..=ty1).any(|ty| (tx0..=tx1).any(|tx| self.solid_tile(tx, ty)))
+        LevelGrid(self).overlaps_solid(r)
     }
 
     /// Whether `r` stands exactly on top of a one-way platform.
     pub fn on_platform(&self, r: Rect) -> bool {
-        let t = self.tile_size;
-        if r.bottom().rem_euclid(t) != 0 {
-            return false;
-        }
-        let ty = r.bottom().div_euclid(t);
-        let (tx0, tx1) = (r.x.div_euclid(t), (r.right() - 1).div_euclid(t));
-        (tx0..=tx1).any(|tx| self.platform_tile(tx, ty))
+        LevelGrid(self).on_platform(r)
     }
 
     /// The bottom of the level in units.

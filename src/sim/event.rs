@@ -44,9 +44,11 @@ pub enum Event {
     DroppedThrough,
     /// The hero touched down.
     Landed {
-        /// Downward speed at contact, px/s.
+        /// Downward speed at contact, units/s (pixels/s from a scaled
+        /// [`crate::Platformer`]).
         impact: f32,
-        /// Pixels fallen from the highest point of the airtime.
+        /// Units fallen from the highest point of the airtime (pixels from a scaled
+        /// [`crate::Platformer`]).
         drop: i32,
     },
     /// A landing turned into a roll.
@@ -99,14 +101,14 @@ pub enum Event {
     GlideEnded,
     /// A dive hit the ground.
     DiveImpact {
-        /// Pixels fallen from the dive's start.
+        /// Units fallen from the dive's start (pixels from a scaled [`crate::Platformer`]).
         drop: i32,
     },
     /// The head hit a ceiling.
     Bonked,
     /// The head clipped a ceiling corner and was nudged past it.
     CornerCorrected {
-        /// Pixels nudged, signed.
+        /// Units nudged, signed (pixels from a scaled [`crate::Platformer`]).
         dx: i32,
     },
     /// The character fell out of the world (the terrain said so).
@@ -138,6 +140,22 @@ impl Event {
     pub const fn with(self, data: [f32; 4]) -> Self {
         match self {
             Event::Custom { id, .. } => Event::Custom { id, data },
+            other => other,
+        }
+    }
+
+    /// This event with its distances and speeds in pixels, `k` per unit: a landing's
+    /// `drop` and `impact`, a dive impact's `drop`, a corner correction's `dx`. What a
+    /// [`crate::Platformer`] with a [`crate::Builder::scale`] hands out; directions and
+    /// [`Event::Custom`] data (yours, in units) stay as they are.
+    pub fn in_pixels(self, k: i32) -> Self {
+        match self {
+            Event::Landed { impact, drop } => Event::Landed {
+                impact: impact * k as f32,
+                drop: drop * k,
+            },
+            Event::DiveImpact { drop } => Event::DiveImpact { drop: drop * k },
+            Event::CornerCorrected { dx } => Event::CornerCorrected { dx: dx * k },
             other => other,
         }
     }

@@ -6,7 +6,9 @@
 //! [`Player`] (speed, facing, refills, [`Player::launch`] and [`Player::teleport`]), read
 //! the [`Intent`] (your own buttons arrive in [`Intent::custom`]), read and change the
 //! terrain (your own type through [`find_mut`](trait.Terrain.html#method.find_mut): break a
-//! block, flip a switch, use up a pickup; the movement sees the change at once), and report
+//! block, flip a switch, use up a pickup; the movement sees the change at once; it answers
+//! in its own pixels under a `Builder::scale`, so scale the body's rects by
+//! [`Step::scale`] first), and report
 //! [`Event::Custom`]s (with up to four numbers of data: a knockback, a hit target).
 //!
 //! Name your modes and events with a [`CustomId`](super::CustomId) after your crate
@@ -46,7 +48,7 @@
 //!     fn before(&mut self, s: &mut Step<'_>) {
 //!         let p = &mut *s.player;
 //!         match p.mode {
-//!             Mode::Normal if s.intent.pressed(0) && p.grounded => {
+//!             Mode::Normal if s.intent.pressed(0) && p.grounded() => {
 //!                 p.mode = Mode::Custom { id: LUNGE, t: 0.0 };
 //!                 p.vx = 240.0 * p.facing as f32;
 //!                 p.vy = 0.0;
@@ -94,6 +96,11 @@ pub struct Step<'a> {
     pub others: &'a [Rect],
     /// The step's length in seconds ([`super::DT`]).
     pub dt: f32,
+    /// Pixels of the game's terrain per unit ([`super::World::scale`]; 1 without a
+    /// `Builder::scale`). Everything in the step is in units, but a terrain of the game's
+    /// own reached through [`find_mut`](trait.Terrain.html#method.find_mut) answers in its
+    /// pixels: ask it with `rect.scaled(s.scale)`.
+    pub scale: i32,
 }
 
 /// A move of your own, run in every [`World::step`](super::World::step). Derive `Clone`

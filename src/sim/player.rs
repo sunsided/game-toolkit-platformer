@@ -9,7 +9,7 @@
 //! 5. running (horizontal speed by mode)
 //! 6. [`jump`](self::jump): ground, coyote, roll, wall, climb and air jumps; drop-through
 //! 7. falling: gravity with hangtime, variable jump, jump cut, wall slide
-//! 8. [`collide`](self::collide): move pixel by pixel, corner correction
+//! 8. [`collide`](self::collide): move unit by unit, corner correction
 //! 9. [`land`](self::land): landings (plain, roll, hard, dive impact), leaving the ground
 //!
 //! Your own moves hook in before and after through [`super::Ability`].
@@ -95,39 +95,43 @@ pub enum Mode {
     },
 }
 
-/// The hero's body.
+/// The hero's body. What a game or an [`Ability`](super::Ability) may change is public:
+/// position (a nudge; [`Player::teleport`] for a jump elsewhere), speed, facing, mode and
+/// refills. The movement's own state (timers, latches, what it stands on) is read through
+/// methods: written by hand it could leave the body in a state the movement never
+/// produces.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Player {
-    /// Left edge of the hitbox, grid pixels.
+    /// Left edge of the hitbox, units (the movement's space; see `docs/scale.md`).
     pub x: i32,
-    /// Top edge of the hitbox, grid pixels.
+    /// Top edge of the hitbox, units.
     pub y: i32,
     /// Hitbox width in units, from [`Tuning::size`].
-    pub w: i32,
+    pub(crate) w: i32,
     /// Hitbox height in units, from [`Tuning::size`].
-    pub h: i32,
-    /// Sub-pixel horizontal position not yet moved.
+    pub(crate) h: i32,
+    /// Fraction of a unit moved sideways but not yet applied to [`Player::x`].
     rem_x: f32,
-    /// Sub-pixel vertical position not yet moved.
+    /// Fraction of a unit moved vertically but not yet applied to [`Player::y`].
     rem_y: f32,
-    /// Horizontal speed, px/s.
+    /// Horizontal speed, units/s (pixels/s only at a scale of 1; see `docs/scale.md`).
     pub vx: f32,
-    /// Vertical speed, px/s, positive down.
+    /// Vertical speed, units/s, positive down.
     pub vy: f32,
     /// 1 facing right, -1 facing left.
     pub facing: i32,
     /// Standing on something.
-    pub grounded: bool,
+    pub(crate) grounded: bool,
     /// What the body is busy with.
     pub mode: Mode,
     /// Coyote time left.
-    pub coyote: f32,
+    pub(crate) coyote: f32,
     /// Jump buffer time left: a press waiting to become a jump.
-    pub buffer: f32,
+    pub(crate) buffer: f32,
     /// Dash buffer time left: a press waiting to become a dash.
-    pub dash_buffer: f32,
+    pub(crate) dash_buffer: f32,
     /// Variable-jump time left: holding jump keeps the upward speed.
-    pub var_jump: f32,
+    pub(crate) var_jump: f32,
     /// The upward speed the variable jump sustains.
     var_jump_speed: f32,
     /// The current jump can still be cut by releasing.
@@ -137,44 +141,44 @@ pub struct Player {
     /// Dashes left.
     pub dashes: u8,
     /// Seconds until the next dash may start.
-    pub dash_cooldown: f32,
+    pub(crate) dash_cooldown: f32,
     /// Climbing stamina left.
     pub stamina: f32,
     /// Seconds the stick is overridden after a wall jump.
-    pub force_move: f32,
+    pub(crate) force_move: f32,
     /// The stick's override direction during [`Player::force_move`].
     force_dir: i32,
     /// Seconds platforms still let the hero through after dropping.
-    pub drop_through: f32,
+    pub(crate) drop_through: f32,
     /// Side of the wall being slid down (-1, 1), or 0.
-    pub wall_slide: i32,
+    pub(crate) wall_slide: i32,
     /// Wall-stick time left: pressing away from the wall slid down doesn't let go yet.
-    pub wall_stick: f32,
+    pub(crate) wall_stick: f32,
     /// Holding on to a wall but sliding down it (a slipping or tired grip).
-    pub slipping: bool,
+    pub(crate) slipping: bool,
     /// Seconds before a wall can be grabbed again after hopping over its top.
-    pub regrab: f32,
+    pub(crate) regrab: f32,
     /// Looking up (-1) or down (1) while standing still, or 0.
-    pub look: i32,
+    pub(crate) look: i32,
     /// Seconds the current look has been held.
-    pub look_time: f32,
+    pub(crate) look_time: f32,
     /// A jump was pressed in the air and is still held: falling, it glides.
     glide_armed: bool,
     /// Gliding.
-    pub gliding: bool,
+    pub(crate) gliding: bool,
     /// Down was held last step, to see a fresh tap.
     was_down: bool,
     /// Super dash was held last step, to see a fresh press.
     was_super: bool,
-    /// Highest (smallest) `y` of this airtime, for the drop height on landing.
-    pub peak_y: i32,
+    /// Highest (smallest) `y` of this airtime (units), for the drop height on landing.
+    pub(crate) peak_y: i32,
     /// The speed of the moving ground (or wall) ridden, units/s, smoothed over about
     /// [`LIFT_SMOOTHING`] seconds: a jump keeps it.
-    pub lift: (f32, f32),
+    pub(crate) lift: (f32, f32),
     /// Seconds [`Player::lift`] still counts after leaving what it rode.
     lift_time: f32,
     /// What its movement ran into in the last step.
-    pub contacts: Contacts,
+    pub(crate) contacts: Contacts,
 }
 
 impl Player {
@@ -372,7 +376,7 @@ impl Player {
                 _ => {}
             }
         }
-        self.look(i, move_x, dt);
+        self.update_look(i, move_x, dt);
         self.run_roll(i, t, ev);
     }
 
@@ -408,7 +412,7 @@ impl Player {
     }
 
     /// Holding up or down while standing still looks that way.
-    fn look(&mut self, i: &Intent, move_x: f32, dt: f32) {
+    fn update_look(&mut self, i: &Intent, move_x: f32, dt: f32) {
         let still =
             self.grounded && self.mode == Mode::Normal && move_x == 0.0 && self.vx.abs() < 1.0;
         let dir = match () {
@@ -741,5 +745,109 @@ pub(crate) fn approach(v: f32, target: f32, step: f32) -> f32 {
         (v + step).min(target)
     } else {
         (v - step).max(target)
+    }
+}
+
+/// The movement's own state, to read (drivers, debug overlays).
+impl Player {
+    /// Hitbox width in units, from [`Tuning::size`].
+    pub fn w(&self) -> i32 {
+        self.w
+    }
+
+    /// Hitbox height in units, from [`Tuning::size`].
+    pub fn h(&self) -> i32 {
+        self.h
+    }
+
+    /// Standing on something.
+    pub fn grounded(&self) -> bool {
+        self.grounded
+    }
+
+    /// Coyote time left.
+    pub fn coyote(&self) -> f32 {
+        self.coyote
+    }
+
+    /// Jump buffer time left: a press waiting to become a jump.
+    pub fn buffer(&self) -> f32 {
+        self.buffer
+    }
+
+    /// Dash buffer time left: a press waiting to become a dash.
+    pub fn dash_buffer(&self) -> f32 {
+        self.dash_buffer
+    }
+
+    /// Variable-jump time left: holding jump keeps the upward speed.
+    pub fn var_jump(&self) -> f32 {
+        self.var_jump
+    }
+
+    /// Seconds until the next dash may start.
+    pub fn dash_cooldown(&self) -> f32 {
+        self.dash_cooldown
+    }
+
+    /// Seconds the stick is overridden after a wall jump.
+    pub fn force_move(&self) -> f32 {
+        self.force_move
+    }
+
+    /// Seconds platforms still let the hero through after dropping.
+    pub fn drop_through(&self) -> f32 {
+        self.drop_through
+    }
+
+    /// Side of the wall being slid down (-1, 1), or 0.
+    pub fn wall_slide(&self) -> i32 {
+        self.wall_slide
+    }
+
+    /// Wall-stick time left: pressing away from the wall slid down doesn't let go yet.
+    pub fn wall_stick(&self) -> f32 {
+        self.wall_stick
+    }
+
+    /// Holding on to a wall but sliding down it (a slipping or tired grip).
+    pub fn slipping(&self) -> bool {
+        self.slipping
+    }
+
+    /// Seconds before a wall can be grabbed again after hopping over its top.
+    pub fn regrab(&self) -> f32 {
+        self.regrab
+    }
+
+    /// Looking up (-1) or down (1) while standing still, or 0.
+    pub fn look(&self) -> i32 {
+        self.look
+    }
+
+    /// Seconds the current look has been held.
+    pub fn look_time(&self) -> f32 {
+        self.look_time
+    }
+
+    /// Gliding.
+    pub fn gliding(&self) -> bool {
+        self.gliding
+    }
+
+    /// Highest (smallest) `y` of this airtime (units), for the drop height on landing.
+    pub fn peak_y(&self) -> i32 {
+        self.peak_y
+    }
+
+    /// The speed of the moving ground (or wall) ridden, units/s, smoothed over about
+    /// [`LIFT_SMOOTHING`] seconds: a jump keeps it.
+    pub fn lift(&self) -> (f32, f32) {
+        self.lift
+    }
+
+    /// What its movement ran into in the last step.
+    pub fn contacts(&self) -> Contacts {
+        self.contacts
     }
 }

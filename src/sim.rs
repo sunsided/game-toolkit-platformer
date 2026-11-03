@@ -4,8 +4,8 @@
 //! [`Intent`]s give the same results, so a cloned world plays out identically (the tests
 //! rely on that, and so will rewinds and replays).
 //!
-//! Movement follows the Celeste school: integer pixel positions with a sub-pixel
-//! remainder, moved one pixel at a time against the tile grid, so collisions are exact and
+//! Movement follows the Celeste school: integer positions (units) with a fractional
+//! remainder, moved one unit at a time against the tile grid, so collisions are exact and
 //! nothing tunnels. All feel numbers live in [`Tuning`].
 //!
 //! On its own: an [`Intent`] in each fixed step, [`Event`]s out.
@@ -26,6 +26,7 @@ pub mod crystal;
 pub mod custom_id;
 pub mod custom_tile;
 pub mod event;
+pub mod grid;
 pub mod hold;
 pub mod intent;
 pub mod level;
@@ -43,6 +44,7 @@ pub use crystal::Crystal;
 pub use custom_id::CustomId;
 pub use custom_tile::CustomTile;
 pub use event::{Event, JumpKind};
+pub use grid::{Grid, GridTerrain};
 pub use hold::Hold;
 pub use intent::Intent;
 pub use level::{Level, TILE, Tile};
@@ -81,6 +83,8 @@ pub struct World {
     pub events: Vec<Event>,
     /// Moves of your own, run in every step in this order (see [`Ability`]).
     pub abilities: Vec<Box<dyn Ability>>,
+    /// Pixels of the game's terrain per unit (see [`World::scale`]).
+    scale: i32,
 }
 
 impl World {
@@ -96,7 +100,20 @@ impl World {
             tick: 0,
             events: Vec::new(),
             abilities: Vec::new(),
+            scale: 1,
         }
+    }
+
+    /// Pixels of the game's terrain per unit: 1 for a world stepped on its own, `k` under a
+    /// [`crate::Platformer`] with a `Builder::scale(k)`. Abilities get it as
+    /// [`Step::scale`], to ask a terrain they [`find`](Terrain::find) in its pixels.
+    pub fn scale(&self) -> i32 {
+        self.scale
+    }
+
+    /// Set [`World::scale`]: the facade does, for the terrain it converts.
+    pub(crate) fn set_scale(&mut self, k: i32) {
+        self.scale = k;
     }
 
     /// A character at `level`'s spawn tile.
@@ -230,6 +247,7 @@ impl World {
             events: &mut self.events,
             others,
             dt: DT,
+            scale: self.scale,
         };
         for a in &mut self.abilities {
             hook(a.as_mut(), &mut s);

@@ -5,7 +5,7 @@
 presets tuned toward the feel of Celeste, Hollow Knight, Silksong and Super Meat Boy, plus an animation state
 graph that follows it). The library is the product; `demo/` is its test bench. Keep using it
 plug and play for game-toolkit users: `Platformer::on(&level, preset)`, `update(&input, &mut level, dt)`,
-draw `sprite()` at `position()`. Design docs live in `docs/` (`hazards.md`, `moving-platforms.md` and `surfaces.md` are doc-tested recipes); keep them in sync when behavior
+draw `sprite()` at `position()`. Design docs live in `docs/` (`hazards.md`, `moving-platforms.md`, `surfaces.md` and `movement.md` are doc-tested; `scale.md` says which API speaks pixels or units); keep them in sync when behavior
 changes (`docs/roadmap.md` tracks what's next). Keep the README short; details go in `docs/`.
 
 ## Layout
@@ -23,7 +23,8 @@ default):
   `Event`s; nothing in `sim` knows about animation. `sim/level.rs` holds the demo level
   (keep its stairs within a plain held jump; a test checks) and `Tile::Custom` tiles.
   `sim/terrain.rs`: the `Terrain` trait the world steps through (`solid` and `base` required,
-  `terrain_layer!()` writes `base` for a leaf; closures count; every other method defaults to forwarding to `base()`, so wrappers write
+  `terrain_layer!()` writes `base` for a leaf; `sim/grid.rs`: `Grid` (tile size + a
+  `CustomTile` per tile) as a terrain via `GridTerrain`, the rules `Level` shares; closures count; every other method defaults to forwarding to `base()`, so wrappers write
   only what changes, with `terrain_layer!(field)` for `base`/`base_mut`/`as_any_mut`;
   per-layer state moves in `tick`, which `update` runs down the chain by itself;
   `find_mut::<T>()` reaches a concrete terrain through wrappers; `surface` (`Surface`:
@@ -33,7 +34,8 @@ default):
   spawn; no boxes (they are the demo's). `sim/ability.rs`: the `Ability` hooks for a
   game's own moves (`Mode::Custom`, `Event::Custom { id, data }`, ids are `CustomId`
   name hashes; `Step::terrain` is mutable; `Step::moves` (`sim/moves.rs`) rules out
-  built-in moves per step; `Step::others` for party members; `Player::contacts`).
+  built-in moves per step; `Step::others` for party members; `Step::scale` for a terrain found in pixels;
+  `Player::contacts`).
   `World::step` is `act`, `Terrain::update`, `settle`. `Level` has custom tile kinds
   (`Level::define`, `CustomTile` with a `Hold`: air, solid, one-way platform; ids are
   game-local `u8`s on purpose) and a `tile_size`.
@@ -50,13 +52,17 @@ default):
   `ability::<T>()`, `contacts`, `tuning`, ...) so games needn't reach the world, which is
   private behind `world()`/`world_mut()` (same for `animator`); `Animate` hooks find their
   ability by type. `platformer/animate.rs`: `Animate`, an ability driving its
-  own animation parameters. `platformer/scaled.rs` converts a pixel terrain to units.
+  own animation parameters (declared in `PARAMS`, checked when a graph is built).
+  `platformer/scaled.rs` converts a pixel terrain to units.
 - `party.rs`: `Party`, several `Platformer`s on one terrain and one clock (the terrain
   updates once per step; members block, stand on and ride each other).
 - `controls.rs` (feature `toolkit`): game-toolkit input to an `Intent` through a `Scheme`
   (`Scheme::SNAPPY`, `PRECISE`, `MOMENTUM`, or `Scheme::of(preset)`).
 - `debug_draw.rs` (feature `toolkit`): `Platformer::draw_debug` with game-toolkit's painter.
 - `examples/minimal.rs`: the smallest game (`task minimal`); keep it short.
+- `examples/tilemap.rs`: a second game on the public API only (its own borrowing
+  terrain at `scale(2)`, hazards, a custom move); its test is a scripted run (`task tilemap`).
+  If it needs `world_mut()` or source reading, that's an API gap to fix.
 
 Demo (`demo/src/`, re-exports the library's `sim`, `anim`, `hero` so its paths stay
 `crate::sim::...`):

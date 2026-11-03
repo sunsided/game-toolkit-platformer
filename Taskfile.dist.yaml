@@ -21,6 +21,11 @@ tasks:
     cmds:
       - cargo run --example minimal {{.PROFILE_FLAG}}
 
+  tilemap:
+    desc: Run the tilemap example (a small game on the public API only, its own map at scale 2)
+    cmds:
+      - cargo run --example tilemap {{.PROFILE_FLAG}}
+
   screenshot:
     desc: "Save what the window shows after AT seconds (default 2) to OUT, then quit"
     vars:

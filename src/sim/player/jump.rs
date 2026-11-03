@@ -126,7 +126,7 @@ impl Player {
         level.platform(r) && !level.solid(r.shifted(0, 1))
     }
 
-    /// The side of a wall within `reach` pixels (facing side first), for wall jumps.
+    /// The side of a wall within `reach` units (facing side first), for wall jumps.
     fn wall_near(&self, level: &dyn Terrain, reach: i32) -> Option<i32> {
         [self.facing, -self.facing]
             .into_iter()

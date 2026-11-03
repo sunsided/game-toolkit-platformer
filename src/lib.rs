@@ -100,12 +100,12 @@ pub use platformer::{Animate, Builder, Platformer};
 pub mod prelude {
     pub use crate::anim::{AnimEvent, GraphSpec};
     #[cfg(feature = "toolkit")]
-    pub use crate::controls::{Controls, Scheme};
+    pub use crate::controls::{Controls, Custom, Scheme};
     pub use crate::party::Party;
     pub use crate::platformer::{Animate, Builder, Platformer};
     pub use crate::sim::{
-        CustomId, CustomTile, Event, Intent, JumpKind, Level, Preset, Rect, Spot, Surface, Terrain,
-        Tile, Tuning,
+        CustomId, CustomTile, Event, Grid, GridTerrain, Intent, JumpKind, Level, Preset, Rect,
+        Spot, Surface, Terrain, Tile, Tuning,
     };
 }
 
@@ -128,3 +128,8 @@ struct SurfacesDoctests;
 #[cfg(doctest)]
 #[doc = include_str!("../docs/moving-platforms.md")]
 struct MovingPlatformsDoctests;
+
+/// The movement doc's code, compiled as a doc test.
+#[cfg(doctest)]
+#[doc = include_str!("../docs/movement.md")]
+struct MovementDoctests;

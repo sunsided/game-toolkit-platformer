@@ -50,6 +50,11 @@ game-toolkit = "0.10"
 name = "minimal"
 required-features = ["toolkit"]
 
+[[example]]
+name = "tilemap"
+required-features = ["toolkit"]
+test = true
+
 [lints]
 workspace = true
 

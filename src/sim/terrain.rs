@@ -63,6 +63,12 @@
 //! # assert!(t.find_mut::<Stage>().is_some() && t.find_mut::<Level>().is_some());
 //! ```
 //!
+//! A terrain that borrows (a view of your game's map, `View<'a>`) writes
+//! `terrain_layer!(borrowed)` or `terrain_layer!(borrowed field)`: the plain forms make it
+//! findable by [`find_mut`](trait.Terrain.html#method.find_mut), which needs `'static`, and
+//! fail with "lifetime may not live long enough" otherwise. See
+//! [`terrain_layer!`](crate::terrain_layer).
+//!
 //! [`Terrain::base`] has no default, so a wrapper can't forget it: without it, the level's
 //! platforms, refills, surfaces and pits would silently be gone. This doesn't compile:
 //!
@@ -76,7 +82,12 @@
 //! }
 //! ```
 
+mod base_ref;
+
 use std::any::Any;
+
+#[doc(hidden)]
+pub use base_ref::BaseRef;
 
 use super::{Rect, Surface};
 
@@ -167,6 +178,12 @@ pub trait Terrain {
     fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
         None
     }
+
+    /// [`Terrain::as_any_mut`], to read: what [`find`](trait.Terrain.html#method.find)
+    /// looks at. [`terrain_layer!`](crate::terrain_layer) writes both. Default: `None`.
+    fn as_any(&self) -> Option<&dyn Any> {
+        None
+    }
 }
 
 /// Whether `t`'s [`Terrain::base`] and [`Terrain::base_mut`] are the same terrain.
@@ -178,9 +195,54 @@ fn same_base<T: Terrain + ?Sized>(t: &mut T) -> bool {
 
 /// Writes the boilerplate of a [`Terrain`] layer inside its `impl Terrain` block:
 /// [`Terrain::base`] and [`Terrain::base_mut`] returning the field named (a name or a
-/// tuple index; left out: no base), and [`Terrain::as_any_mut`] returning the terrain
-/// itself, so [`find_mut`](trait.Terrain.html#method.find_mut) finds it. A terrain that
-/// borrows (has a lifetime) can't be found; it writes `base` by hand.
+/// tuple index; left out: no base), and [`Terrain::as_any_mut`] and [`Terrain::as_any`] returning the
+/// terrain itself, so [`find_mut`](trait.Terrain.html#method.find_mut) finds it.
+///
+/// A terrain that borrows (has a lifetime) can't be found, since `find_mut` needs
+/// `'static`; the plain forms then fail with "lifetime may not live long enough". Write
+/// `terrain_layer!(borrowed)` (no base) or `terrain_layer!(borrowed field)` instead; its
+/// base is still found. In every form the base field may be the terrain itself, a `&mut`
+/// to one, or a `Box<dyn Terrain>`:
+///
+/// ```
+/// use game_toolkit_platformer::sim::{Level, Rect, Terrain};
+///
+/// struct Map { floor: i32 }
+/// struct View<'a> { map: &'a Map }
+/// impl Terrain for View<'_> {
+///     fn solid(&self, r: Rect) -> bool { r.bottom() > self.map.floor }
+///     game_toolkit_platformer::terrain_layer!(borrowed);
+/// }
+///
+/// struct Doors<'a> { level: &'a mut Level, shut: bool }
+/// impl Terrain for Doors<'_> {
+///     fn solid(&self, r: Rect) -> bool { self.level.solid(r) || (self.shut && r.x < 0) }
+///     game_toolkit_platformer::terrain_layer!(borrowed level);
+/// }
+///
+/// struct Lit<'a> { level: Level, map: &'a Map }
+/// impl Terrain for Lit<'_> {
+///     fn solid(&self, r: Rect) -> bool { self.level.solid(r) || r.bottom() > self.map.floor }
+///     game_toolkit_platformer::terrain_layer!(borrowed level);
+/// }
+///
+/// struct Any { inner: Box<dyn Terrain> }
+/// impl Terrain for Any {
+///     fn solid(&self, r: Rect) -> bool { self.inner.solid(r) }
+///     game_toolkit_platformer::terrain_layer!(inner);
+/// }
+/// # let map = Map { floor: 100 };
+/// # let mut lit = Lit { level: Level::demo(), map: &map };
+/// # assert!((&mut lit as &mut dyn Terrain).find_mut::<Level>().is_some());
+/// # let mut any = Any { inner: Box::new(Level::demo()) };
+/// # assert!((&mut any as &mut dyn Terrain).find_mut::<Level>().is_some());
+/// # assert!(View { map: &map }.solid(Rect { x: 0, y: 95, w: 6, h: 12 }));
+/// # let mut level = Level::demo();
+/// # let mut d = Doors { level: &mut level, shut: true };
+/// # assert!(!d.fell_out(Rect { x: 9, y: 9, w: 2, h: 2 }));
+/// # let t: &mut dyn Terrain = &mut d;
+/// # assert!(t.find_mut::<Level>().is_some());
+/// ```
 ///
 /// ```
 /// use game_toolkit_platformer::sim::{Level, Rect, Terrain};
@@ -211,13 +273,29 @@ macro_rules! terrain_layer {
         fn as_any_mut(&mut self) -> ::core::option::Option<&mut dyn ::core::any::Any> {
             ::core::option::Option::Some(self)
         }
+        fn as_any(&self) -> ::core::option::Option<&dyn ::core::any::Any> {
+            ::core::option::Option::Some(self)
+        }
+    };
+    (borrowed) => {
+        fn base(&self) -> ::core::option::Option<&dyn $crate::sim::Terrain> {
+            ::core::option::Option::None
+        }
+    };
+    (borrowed $base:tt) => {
+        fn base(&self) -> ::core::option::Option<&dyn $crate::sim::Terrain> {
+            ::core::option::Option::Some({ use $crate::sim::terrain::BaseRef as _; self.$base.__terrain_base() })
+        }
+        fn base_mut(&mut self) -> ::core::option::Option<&mut dyn $crate::sim::Terrain> {
+            ::core::option::Option::Some({ use $crate::sim::terrain::BaseRef as _; self.$base.__terrain_base_mut() })
+        }
     };
     ($base:tt) => {
         fn base(&self) -> ::core::option::Option<&dyn $crate::sim::Terrain> {
-            ::core::option::Option::Some(&self.$base)
+            ::core::option::Option::Some({ use $crate::sim::terrain::BaseRef as _; self.$base.__terrain_base() })
         }
         fn base_mut(&mut self) -> ::core::option::Option<&mut dyn $crate::sim::Terrain> {
-            ::core::option::Option::Some(&mut self.$base)
+            ::core::option::Option::Some({ use $crate::sim::terrain::BaseRef as _; self.$base.__terrain_base_mut() })
         }
         $crate::terrain_layer!(@any);
     };
@@ -240,6 +318,23 @@ impl dyn Terrain + '_ {
             return self.as_any_mut()?.downcast_mut();
         }
         self.base_mut()?.find_mut()
+    }
+
+    /// [`find_mut`](trait.Terrain.html#method.find_mut), to read: the terrain of type `T`
+    /// in this one, through a shared `&dyn Terrain` (a debug overlay, a minimap).
+    ///
+    /// ```
+    /// use game_toolkit_platformer::sim::{Level, Terrain};
+    ///
+    /// let level = Level::parse(&["....", "####"]);
+    /// let terrain: &dyn Terrain = &level;
+    /// assert_eq!(terrain.find::<Level>().map(Level::width), Some(4));
+    /// ```
+    pub fn find<T: 'static>(&self) -> Option<&T> {
+        match self.as_any().and_then(|a| a.downcast_ref()) {
+            Some(t) => Some(t),
+            None => self.base()?.find(),
+        }
     }
 }
 

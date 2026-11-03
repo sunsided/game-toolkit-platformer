@@ -23,6 +23,8 @@
 //! Your game's own buttons (attack, interact, ...) go in [`Scheme::custom`]; they arrive as
 //! bits in [`Intent::custom`] and [`Intent::custom_pressed`].
 
+use std::borrow::Cow;
+
 use game_toolkit::prelude::*;
 
 use crate::sim::{Intent, Preset};
@@ -31,7 +33,7 @@ use crate::sim::{Intent, Preset};
 const DEADZONE: f32 = 0.25;
 
 /// Which keys and buttons do what. An action with no keys and no buttons can't be done.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Scheme {
     /// Jump keys.
     pub jump: &'static [Key],
@@ -59,32 +61,53 @@ pub struct Scheme {
     pub super_dash_pad: &'static [Button],
     /// Your game's own buttons, read into [`Intent::custom`] and
     /// [`Intent::custom_pressed`]. The built-in schemes have none; add yours with
-    /// `Scheme { custom: &[...], ..Scheme::SNAPPY }`.
-    pub custom: &'static [Custom],
+    /// `Scheme { custom: Cow::Borrowed(&[...]), ..Scheme::SNAPPY }`, or at runtime (a
+    /// key-rebinding menu) with [`Scheme::bind`].
+    pub custom: Cow<'static, [Custom]>,
 }
 
 /// A button of your game's own (attack, interact, ...): which [`Intent`] bit, and the keys
-/// and gamepad buttons that set it.
+/// and gamepad buttons that set it. Fixed ones can be `const`; rebound ones are built at
+/// runtime ([`Scheme::bind`]).
 ///
 /// ```
+/// use std::borrow::Cow;
 /// use game_toolkit::prelude::{Button, Key};
 /// use game_toolkit_platformer::controls::{Custom, Scheme};
 ///
 /// const ATTACK: u8 = 0;
 /// const SCHEME: Scheme = Scheme {
-///     custom: &[Custom { bit: ATTACK, keys: &[Key::KeyX], pad: &[Button::West] }],
+///     custom: Cow::Borrowed(&[Custom::new(ATTACK, &[Key::KeyX], &[Button::West])]),
 ///     ..Scheme::SNAPPY
 /// };
 /// assert_eq!(SCHEME.custom.len(), 1);
+///
+/// // A rebinding menu: attack on V from now on, the pad as it was.
+/// let mut scheme = SCHEME;
+/// scheme.bind(ATTACK, vec![Key::KeyV], &[Button::West][..]);
+/// assert_eq!(scheme.custom[0].keys[..], [Key::KeyV]);
+/// scheme.bind(1, &[Key::KeyB][..], vec![]); // a second button, added
+/// assert_eq!(scheme.custom.len(), 2);
 /// ```
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Custom {
     /// The bit in [`Intent::custom`] and [`Intent::custom_pressed`], 0 to 31.
     pub bit: u8,
     /// Keys.
-    pub keys: &'static [Key],
+    pub keys: Cow<'static, [Key]>,
     /// Gamepad buttons.
-    pub pad: &'static [Button],
+    pub pad: Cow<'static, [Button]>,
+}
+
+impl Custom {
+    /// Button `bit` on `keys` and `pad`, fixed (usable in a `const`).
+    pub const fn new(bit: u8, keys: &'static [Key], pad: &'static [Button]) -> Self {
+        Self {
+            bit,
+            keys: Cow::Borrowed(keys),
+            pad: Cow::Borrowed(pad),
+        }
+    }
 }
 
 // gilrs names: RightTrigger2 / LeftTrigger2 are the triggers, RightTrigger / LeftTrigger
@@ -106,7 +129,7 @@ impl Scheme {
         sprint_pad: &[Button::West],
         super_dash: &[Key::KeyS],
         super_dash_pad: &[Button::LeftTrigger2],
-        custom: &[],
+        custom: Cow::Borrowed(&[]),
     };
 
     /// After Celeste's default layout. The precise preset's scheme.
@@ -128,7 +151,7 @@ impl Scheme {
         sprint_pad: &[],
         super_dash: &[],
         super_dash_pad: &[],
-        custom: &[],
+        custom: Cow::Borrowed(&[]),
     };
 
     /// After Super Meat Boy's: jump, and hold to run. The momentum preset's scheme.
@@ -145,8 +168,28 @@ impl Scheme {
         sprint_pad: &[Button::West, Button::RightTrigger2],
         super_dash: &[],
         super_dash_pad: &[],
-        custom: &[],
+        custom: Cow::Borrowed(&[]),
     };
+
+    /// Bind custom button `bit` to `keys` and `pad` from now on (a key-rebinding menu),
+    /// replacing what it was bound to, or adding it if it wasn't.
+    pub fn bind(
+        &mut self,
+        bit: u8,
+        keys: impl Into<Cow<'static, [Key]>>,
+        pad: impl Into<Cow<'static, [Button]>>,
+    ) {
+        let button = Custom {
+            bit,
+            keys: keys.into(),
+            pad: pad.into(),
+        };
+        let custom = self.custom.to_mut();
+        match custom.iter_mut().find(|c| c.bit == bit) {
+            Some(c) => *c = button,
+            None => custom.push(button),
+        }
+    }
 
     /// The control scheme that goes with a feel preset (`None`: Hollow Knight's).
     pub fn of(preset: Option<Preset>) -> Self {
@@ -190,12 +233,12 @@ pub fn read_intent(input: &Input, scheme: &Scheme, triggers: &mut Triggers) -> I
         custom: 0,
         custom_pressed: 0,
     };
-    for c in scheme.custom {
+    for c in scheme.custom.iter() {
         let bit = 1 << c.bit;
-        if held(c.keys) {
+        if held(&c.keys) {
             i.custom |= bit;
         }
-        if pressed(c.keys) {
+        if pressed(&c.keys) {
             i.custom_pressed |= bit;
         }
     }
@@ -239,12 +282,12 @@ pub fn read_intent(input: &Input, scheme: &Scheme, triggers: &mut Triggers) -> I
         i.sprint |= held(scheme.sprint_pad);
         i.super_dash |= held(scheme.super_dash_pad);
         cast |= pressed(scheme.cast_pad);
-        for c in scheme.custom {
+        for c in scheme.custom.iter() {
             let bit = 1 << c.bit;
-            if held(c.pad) {
+            if held(&c.pad) {
                 i.custom |= bit;
             }
-            if pressed(c.pad) {
+            if pressed(&c.pad) {
                 i.custom_pressed |= bit;
             }
         }
@@ -255,7 +298,7 @@ pub fn read_intent(input: &Input, scheme: &Scheme, triggers: &mut Triggers) -> I
 
 /// Reads a scheme's keys and buttons into an [`Intent`] each frame (remembering the
 /// gamepad triggers, which some pads only report as an axis).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Controls {
     /// Which keys and buttons do what.
     pub scheme: Scheme,
