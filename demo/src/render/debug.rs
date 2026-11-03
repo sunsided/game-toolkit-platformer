@@ -90,6 +90,7 @@ fn mode(m: Mode) -> &'static str {
         Mode::DiveLand { .. } => "IMPACT",
         Mode::SuperCharge { .. } => "CHARGE",
         Mode::SuperDash { .. } => "SUPER",
+        Mode::Custom { .. } => "OWN",
         _ => "?",
     }
 }

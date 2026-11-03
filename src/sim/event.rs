@@ -109,6 +109,9 @@ pub enum Event {
     },
     /// The character fell out of the world (the terrain said so).
     FellOut,
+    /// Something of your own happened (an [`Ability`](super::Ability) reported it), by a
+    /// number of your choosing.
+    Custom(u32),
     /// Something solid moved into the character (moving ground carried it into a
     /// ceiling, a moving solid hit it): it's stuck inside. Reported every step it stays
     /// so; usually a respawn.

@@ -1718,3 +1718,101 @@ fn a_moving_wall_carries_the_character_holding_it() {
         "half a second at 30 units/s: {still} vs {rising}"
     );
 }
+
+/// Custom button 0 lunges forward on the ground for 0.15 s; counts its lunges.
+#[derive(Clone, Debug, Default)]
+struct Lunge {
+    /// Lunges so far.
+    count: u32,
+}
+
+impl Ability for Lunge {
+    fn before(&mut self, s: &mut Step<'_>) {
+        let p = &mut *s.player;
+        match p.mode {
+            Mode::Normal if s.intent.pressed(0) && p.grounded => {
+                self.count += 1;
+                p.mode = Mode::Custom { id: 1, t: 0.0 };
+                p.vx = 240.0 * p.facing as f32;
+                s.events.push(Event::Custom(self.count));
+            }
+            Mode::Custom { id: 1, t } if t >= 0.15 => p.mode = Mode::Normal,
+            _ => {}
+        }
+    }
+
+    fn after(&mut self, s: &mut Step<'_>) {
+        // Against a wall, the lunge ends at once.
+        if matches!(s.player.mode, Mode::Custom { id: 1, .. }) && s.player.vx == 0.0 {
+            s.player.mode = Mode::Normal;
+        }
+    }
+}
+
+#[test]
+fn an_ability_takes_the_body_over_and_hands_it_back() {
+    let mut w = world(room(&[]));
+    w.abilities.push(Box::new(Lunge::default()));
+    let x0 = w.player.x;
+    let press = Intent {
+        custom: 1,
+        custom_pressed: 1,
+        jump_pressed: true,
+        jump_held: true,
+        ..Intent::default()
+    };
+    w.step(&press);
+    assert!(w.events.contains(&Event::Custom(1)));
+    assert!(
+        !w.events.iter().any(|e| matches!(e, Event::Jumped { .. })),
+        "no built-in move during a custom mode: {:?}",
+        w.events
+    );
+    let events = run(&mut w, Intent::default(), 17);
+    assert!(
+        matches!(w.player.mode, Mode::Custom { id: 1, .. }),
+        "still lunging"
+    );
+    assert!(
+        w.player.x - x0 >= 30,
+        "carried by its speed: {}",
+        w.player.x - x0
+    );
+    assert!(w.player.grounded && events.is_empty(), "{events:?}");
+    run(&mut w, Intent::default(), 2);
+    assert_eq!(w.player.mode, Mode::Normal, "the clock ran out");
+
+    // Into the room's right wall: the after hook ends it.
+    w.player.x = 21 * TILE;
+    w.step(&press);
+    run(&mut w, Intent::default(), 6);
+    assert_eq!(w.player.mode, Mode::Normal);
+    assert_eq!(w.player.rect().right(), 23 * TILE);
+}
+
+#[test]
+fn a_cloned_world_with_abilities_plays_out_identically() {
+    let mut a = world(Level::demo());
+    a.abilities.push(Box::new(Lunge::default()));
+    let script = |k: u64| Intent {
+        move_x: if k % 90 < 60 { 1.0 } else { -1.0 },
+        custom_pressed: u32::from(k.is_multiple_of(37)),
+        jump_pressed: k.is_multiple_of(53),
+        jump_held: k % 53 < 20,
+        ..Intent::default()
+    };
+    for k in 0..200 {
+        a.step(&script(k));
+    }
+    let mut b = a.clone();
+    let (mut ea, mut eb) = (Vec::new(), Vec::new());
+    for k in 200..800 {
+        a.step(&script(k));
+        b.step(&script(k));
+        ea.extend(a.events.iter().copied());
+        eb.extend(b.events.iter().copied());
+    }
+    assert_eq!(a.player, b.player);
+    assert_eq!(ea, eb);
+    assert!(ea.iter().any(|e| matches!(e, Event::Custom(_))));
+}

@@ -20,6 +20,7 @@
 //! assert!(world.events.iter().any(|e| matches!(e, Event::Jumped { kind: JumpKind::Ground, .. })));
 //! ```
 
+pub mod ability;
 pub mod block;
 pub mod crystal;
 pub mod event;
@@ -30,6 +31,7 @@ pub mod rect;
 pub mod terrain;
 pub mod tuning;
 
+pub use ability::{Ability, Step};
 pub use block::Block;
 pub use crystal::Crystal;
 pub use event::{Event, JumpKind};
@@ -65,6 +67,8 @@ pub struct World {
     pub tick: u64,
     /// What happened in the last step.
     pub events: Vec<Event>,
+    /// Moves of your own, run in every step in this order (see [`Ability`]).
+    pub abilities: Vec<Box<dyn Ability>>,
 }
 
 impl World {
@@ -79,6 +83,7 @@ impl World {
             last_shove: None,
             tick: 0,
             events: Vec::new(),
+            abilities: Vec::new(),
         }
     }
 
@@ -112,8 +117,10 @@ impl World {
             terrain.shove(id, amount, self.player.rect());
         }
         let before = self.player.x;
+        self.abilities(&*terrain, intent, |a, s| a.before(s));
         self.player
             .step(&*terrain, intent, &self.tuning, DT, &mut self.events);
+        self.abilities(&*terrain, intent, |a, s| a.after(s));
         if let Some((Shove::Pull { .. }, id)) = shove {
             // The box follows the character by as many units as it moved.
             let dx = self.player.x - before;
@@ -149,6 +156,26 @@ impl World {
         self.effort = 0.0;
         self.last_shove = None;
         self.events.push(Event::Respawned);
+    }
+
+    /// Run `hook` of every ability.
+    fn abilities(
+        &mut self,
+        terrain: &dyn Terrain,
+        intent: &Intent,
+        hook: fn(&mut dyn Ability, &mut Step<'_>),
+    ) {
+        let mut s = Step {
+            player: &mut self.player,
+            intent,
+            terrain,
+            tuning: &self.tuning,
+            events: &mut self.events,
+            dt: DT,
+        };
+        for a in &mut self.abilities {
+            hook(a.as_mut(), &mut s);
+        }
     }
 
     /// The box the character strains against but which hasn't budged yet, if any (by the

@@ -18,6 +18,26 @@ ceiling, a step to a ledge over the pit, a pillar to climb, crystals and two blo
 clocks), dash, dive, climb, running, jump, falling, moving, landing. The order is part of
 the feel: a buffered jump is checked before gravity, the landing after moving.
 
+## Your own abilities
+
+A game adds moves (an attack lunge, a ledge grab, a grapple, a pogo) as `sim::Ability`s
+in `World::abilities` (or `Builder::ability`), not by forking `sim/player`:
+
+- **When**: `before` runs ahead of the built-in moves each step (after the boxes are
+  decided), `after` once they moved, collided and landed. Several abilities run in the
+  order added.
+- **What they touch**: the `Player`'s public state (speed, facing, refills, `launch`,
+  `teleport`), the `Intent` (custom buttons in `custom`/`custom_pressed`, latched by the
+  facade), the terrain and the tuning, read-only. They report `Event::Custom(n)`.
+- **Modes**: `Mode::Custom { id, t }` takes the body over: no built-in move starts or runs
+  (no running, gravity, jumps, dashes, climbing), but it still moves by its speed, collides,
+  lands and rides moving ground, and `t` counts up. Setting `Mode::Normal` hands it back.
+  Outside a custom mode, an ability works alongside the built-in moves (a pogo in
+  `after`, say).
+- **Determinism**: abilities are part of the world, cloned with it (`Clone` is required),
+  so a cloned world plays out identically as long as they keep their state inside and
+  read nothing from outside.
+
 ## Abilities
 
 | Ability | Rule | Knobs |

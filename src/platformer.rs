@@ -30,7 +30,9 @@ use crate::anim::{AnimEvent, Animator, Driver, GraphSpec, SpecError};
 #[cfg(feature = "toolkit")]
 use crate::controls::{Controls, Scheme};
 use crate::hero::{HeroDriver, spec};
-use crate::sim::{DT, Event, Intent, Level, Player, Preset, Rect, TILE, Terrain, Tuning, World};
+use crate::sim::{
+    Ability, DT, Event, Intent, Level, Player, Preset, Rect, TILE, Terrain, Tuning, World,
+};
 
 /// At most this many fixed steps per frame, so a hitch doesn't spiral.
 const MAX_STEPS: u32 = 8;
@@ -94,6 +96,8 @@ pub struct Builder {
     hero_driver: bool,
     /// Your own drivers, run after the built-in one.
     drivers: Vec<Box<dyn Driver<World>>>,
+    /// Moves of your own.
+    abilities: Vec<Box<dyn Ability>>,
     /// Where to start.
     spawn: Spawn,
     /// Put it back at the start after falling out.
@@ -149,6 +153,13 @@ impl Builder {
     /// can also be set between updates through [`Platformer::animator`].
     pub fn driver(mut self, driver: impl Driver<World> + 'static) -> Self {
         self.drivers.push(Box::new(driver));
+        self
+    }
+
+    /// A move of your own (an attack lunge, a ledge grab), run in every step; several run
+    /// in the order added. See [`Ability`].
+    pub fn ability(mut self, ability: impl Ability + Clone + 'static) -> Self {
+        self.abilities.push(Box::new(ability));
         self
     }
 
@@ -208,6 +219,7 @@ impl Builder {
         };
         let mut world = World::new(self.tuning, spawn);
         world.respawn = self.respawn;
+        world.abilities = self.abilities;
         Ok(Platformer {
             prev: world.player.exact_pos(),
             world,
@@ -259,6 +271,7 @@ impl Platformer {
             partial: false,
             hero_driver: true,
             drivers: Vec::new(),
+            abilities: Vec::new(),
             spawn: Spawn::At(0, 0),
             respawn: true,
             #[cfg(feature = "toolkit")]
@@ -780,6 +793,54 @@ mod tests {
         hero.set_preset(Preset::Momentum);
         hero.respawn();
         assert_eq!(hero.hitbox().h, 20, "a preset is a feel, not a body");
+    }
+
+    #[test]
+    fn abilities_from_the_builder_run_with_custom_buttons() {
+        use crate::sim::{Mode, Step};
+        /// Custom button 0 stops the character dead, in a mode of its own for 0.1 s.
+        #[derive(Clone, Debug)]
+        struct Brake;
+        impl Ability for Brake {
+            fn before(&mut self, s: &mut Step<'_>) {
+                match s.player.mode {
+                    Mode::Normal if s.intent.pressed(0) => {
+                        s.player.mode = Mode::Custom { id: 9, t: 0.0 };
+                        s.player.vx = 0.0;
+                        s.events.push(Event::Custom(9));
+                    }
+                    Mode::Custom { id: 9, t } if t >= 0.1 => s.player.mode = Mode::Normal,
+                    _ => {}
+                }
+            }
+        }
+        let mut hero = Platformer::builder()
+            .ability(Brake)
+            .spawn_at(20, 88)
+            .build()
+            .unwrap();
+        let run = Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        };
+        for _ in 0..20 {
+            hero.advance(run, &mut floor, 1.0 / 60.0);
+        }
+        hero.drain_events();
+        // The press lands in a frame without a step and is still seen.
+        let brake = Intent {
+            custom_pressed: 1,
+            ..run
+        };
+        hero.advance(brake, &mut floor, 0.0);
+        hero.advance(run, &mut floor, DT);
+        assert!(hero.drain_events().contains(&Event::Custom(9)));
+        assert_eq!(hero.world.player.vx, 0.0, "the run doesn't accelerate it");
+        for _ in 0..10 {
+            hero.advance(run, &mut floor, 1.0 / 60.0);
+        }
+        assert_eq!(hero.world.player.mode, Mode::Normal, "handed back");
+        assert!(hero.world.player.vx > 0.0, "running again");
     }
 
     #[test]

@@ -11,6 +11,8 @@
 //! 7. falling: gravity with hangtime, variable jump, jump cut, wall slide
 //! 8. [`collide`](self::collide): move pixel by pixel, corner correction
 //! 9. [`land`](self::land): landings (plain, roll, hard, dive impact), leaving the ground
+//!
+//! Your own moves hook in before and after through [`super::Ability`].
 
 mod climb;
 mod collide;
@@ -102,6 +104,14 @@ pub enum Mode {
     /// Recovering from a dive's impact.
     DiveLand {
         /// Seconds since the impact.
+        t: f32,
+    },
+    /// A move of your own ([`super::Ability`]) has the body: no built-in move starts or
+    /// runs, no gravity; it still moves by its speed, collides and lands.
+    Custom {
+        /// Which of your moves, by a number of your choosing.
+        id: u16,
+        /// Seconds since it started (counted by the movement).
         t: f32,
     },
 }
@@ -463,7 +473,8 @@ impl Player {
         | Mode::Dash { t: x, .. }
         | Mode::Dive { t: x }
         | Mode::DiveLand { t: x }
-        | Mode::SuperCharge { t: x, .. } = &mut self.mode
+        | Mode::SuperCharge { t: x, .. }
+        | Mode::Custom { t: x, .. } = &mut self.mode
         {
             let before = *x;
             *x += dt;
@@ -505,7 +516,8 @@ impl Player {
             | Mode::HardLand { t }
             | Mode::Dash { t, .. }
             | Mode::Dive { t }
-            | Mode::DiveLand { t } => t,
+            | Mode::DiveLand { t }
+            | Mode::Custom { t, .. } => t,
         }
     }
 
@@ -535,7 +547,8 @@ impl Player {
             | Mode::Dive { .. }
             | Mode::Climb
             | Mode::SuperCharge { .. }
-            | Mode::SuperDash { .. } => {}
+            | Mode::SuperDash { .. }
+            | Mode::Custom { .. } => {}
             Mode::Normal => {
                 let top = match self.shove {
                     Shove::None if sprint => t.sprint_speed,

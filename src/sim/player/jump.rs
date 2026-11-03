@@ -26,7 +26,8 @@ impl Player {
             Mode::HardLand { .. }
             | Mode::Dive { .. }
             | Mode::DiveLand { .. }
-            | Mode::SuperDash { .. } => false,
+            | Mode::SuperDash { .. }
+            | Mode::Custom { .. } => false,
         };
         if self.buffer <= 0.0 || !able {
             return false;
