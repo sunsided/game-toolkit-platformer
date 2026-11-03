@@ -7,6 +7,17 @@
 //! Movement follows the Celeste school: integer pixel positions with a sub-pixel
 //! remainder, moved one pixel at a time against the tile grid, so collisions are exact and
 //! nothing tunnels. All feel numbers live in [`Tuning`].
+//!
+//! On its own: an [`Intent`] in each fixed step, [`Event`]s out.
+//!
+//! ```
+//! use animation::sim::{Event, Intent, JumpKind, Level, Preset, World};
+//!
+//! let mut world = World::new(Level::demo(), Preset::Celeste.tuning());
+//! world.step(&Intent::default());
+//! world.step(&Intent { jump_pressed: true, jump_held: true, ..Intent::default() });
+//! assert!(world.events.iter().any(|e| matches!(e, Event::Jumped { kind: JumpKind::Ground, .. })));
+//! ```
 
 pub mod block;
 pub mod crystal;

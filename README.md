@@ -1,95 +1,33 @@
 # animation
 
-A small retro platformer that exists to grow a pluggable, configurable animation controller.
+A pluggable controller for modern platformers that feel fluid and snappy: movement and animation as two cooperating systems, with a small game around them as the test bench.
 
 ![Scaling a single wall with stick-aimed wall jumps, Hollow Knight-like preset](docs/art/wall-scale.png)
 
-A character controller that feels as good as the ones in Hollow Knight, Celeste or Super Meat Boy is really two systems: movement that is precise and forgiving, and animation that shows every one of its decisions without ever holding one up. The first part is well documented by now; the second usually ends up as a pile of conditionals in the player script. This repository tries the other way around: the animation is a state graph made of named parameters, clips, conditions and priorities, compiled and validated, and run by an animator that doesn't know what it animates. The game around it is the test bench, and its hero combines moves from all three games so the controller has enough to animate.
+A character that feels as good as the ones in Hollow Knight, Celeste or Super Meat Boy needs movement that is precise and forgiving, and animation that shows every one of its decisions without ever holding one up. The first part is well documented by now; the second usually ends up as a pile of conditionals in the player script. Here the animation is a state graph of named parameters, clips, conditions and priorities, compiled, validated, and run by an animator that doesn't know what it animates, and the movement is a deterministic simulation that only reports what happened.
 
-It is written in Rust on [game-toolkit](https://github.com/sunsided/game-toolkit) and borrows its technical setup from my artillery game Starscorcher: a deterministic simulation free of toolkit types, a 384x216 pixel grid drawn through one `Raster` trait, and the toolkit only in the app module. The hero is the heroine of my game Cheesed, a mouse with a blonde mane, a red headband and a torn red cape, drawn after her character sheet at 12 pixels tall (see [The heroine](#the-heroine)).
+It is written in Rust on [game-toolkit](https://github.com/sunsided/game-toolkit), but the two systems use neither the toolkit nor any other dependency, so they carry over to other engines.
 
-## The moves
+## What's in it
 
-Everything the movement can do, each tunable and each animated:
+| Layer | Where | What it does |
+|---|---|---|
+| Movement | `src/sim/` | A fixed-step (120 Hz), deterministic body: an `Intent` in per step, `Event`s out (jumped, landed, dashed, ...). All feel numbers and ability switches live in `Tuning`; `Preset`s set them toward one game each. |
+| Animation controller | `src/anim/` | Generic: parameters, clips, conditions, a graph spec compiled into a validated graph, an `Animator`, and a `Driver` trait that feeds it. |
+| Binding | `src/hero/` | The glue for one character: its graph (36 states), its sprite numbers and poses, and the driver that turns movement facts and events into graph parameters. |
+| Test bench | `src/render/`, `src/app/` | The game: drawing, input, the debug overlay. Replace this part with your own. |
 
-- jumping: a jump buffer (press before landing, jump on the first frame you can), coyote time, a variable jump height, a jump cut on release, hangtime at the apex, and a heavier fall,
-- in the air: a double jump (with wings in the Hollow Knight preset), a glide after it (Silksong's Drifter's Cloak), 8-way dashes with recharge from the ground, walls or crystals, and a dive,
-- on walls: sliding, sticking, stick-aimed wall jumps that can scale a single wall, and climbing with stamina and a grip that holds firm or slips,
-- on the ground: running and sprinting, rolling out of high landings or out of a sprint, hard landings, the Crystal Heart super dash, dropping through one-way platforms, and looking up and down,
-- with boxes: pushing and pulling, with static friction so they feel heavy (a box rumbles while it hasn't budged yet),
-- details: corner correction, a skid when turning around, and an idle fidget after standing still for a few seconds.
+## Using it in your platformer
 
-| | |
-|---|---|
-| ![Super dash across the floor, ending in a bonk](docs/art/super-dash.png) | ![Glide after the double jump, Silksong-like preset](docs/art/glide.png) |
-| ![Bouncing up the narrow chimney](docs/art/chimney-bounce.png) | ![Push, hold and pull a box](docs/art/push-pull.png) |
+The crate isn't published; use it as a git dependency or copy `src/anim/` (and `src/sim/` if you want the movement too). Both compile on `std` alone.
 
-The pictures are filmstrips (`task snapshot`): a scripted move played headless, the hero drawn every few steps, and the animation states it went through as the caption.
+### The animation controller
 
-## The heroine
-
-![The heroine in every sprite pose](docs/art/poses.png)
-
-She is a cut-out puppet rather than hand-drawn frames: boots, tunic, belt, sheathed sword, arm, head, muzzle, ears and headband are placed in the body's frame for each of the 78 sprite poses, so every squash, stretch and lean carries over. The cape, tail, three strands of mane and the headband's ends are short simulated chains; they trail behind her, swing over when she turns, open up when she glides, and settle when she stands. They also move in the wind: a steady breeze, stronger the higher up she is, streams them out behind her whichever way she faces, and gusts from the moon's side come and go on top of it (streaks blow across the sky while one lasts). A gust blows its own way: facing into it, everything streams back; with it at her back, the mane blows forward across her face and the cape swings around her. The colors come from the character sheet's palette, and her bearing from the Cheesed paintings: a wide stance with a hand on the hilt, a wild mane and a large torn cape, and, when left standing for a few seconds, the sword drawn and raised to the sky. When her dash is spent, the mane turns pale blue, as Madeline's hair does in Celeste; charging the super dash, she glows with crystal light that gathers around her and flashes once it is ready. The dash crystals are cheese wedges (with a heart for each one eaten). `task poses` renders the sheet above.
-
-The scene follows the paintings too: a violet night sky with gently twinkling stars and clouds, a full moon, snowy mountains, a castle with lit windows, firs and mist behind the level, rock with a warm rim light, and wooden planks for the thin platforms. Moss hangs under the platforms and grass grows on the rock tops; both lean with the wind and react to her: they bend aside where she brushes through, every footstep the animation controller marks rustles the grass underfoot, and landings, rolls, dashes, dives and the super dash shove them away from her. F3 switches to a diagnostic look instead: the hero as a block colored by kind of state, on a plain backdrop.
-
-Her face is a few pixels at this size, so the sheet's expressions don't show, and her sword waits for an attack move. The renderer can draw at two pixels per simulation unit for twice the detail; at one, she kept more of her charm.
-
-## Playing
-
-```sh
-task run
-```
-
-Movement is the arrows, the left stick or the d-pad. The buttons follow the feel preset you're playing, and F2 switches both at once (the overlay's bottom-right corner always shows the current keys):
-
-| Action | Hollow Knight-like, Silksong-like, hybrid | Celeste-like | Meat Boy-like |
-|---|---|---|---|
-| jump (hold for height) | Z, Space / A | C, Space / A, Y | Space, Z / A |
-| dash | C / RT | X / X, B | |
-| super dash (hold, release) | S / LT | | |
-| grab (hold) | D / LB | Z / RT, LT, RB, LB | |
-| dive | down + A / down + B, down + RB | | |
-| sprint / run (hold) | Shift / X | | Shift, X / X, RT |
-
-Keyboard / gamepad, with Xbox button names. Hollow Knight's own slots are kept where it has the move (dash on RT, super dash on LT, the dive as down + cast like Desolate Dive); grab, which Hollow Knight doesn't have, goes to D and LB. Triggers work whether the pad reports them as buttons or only as an analog axis.
-
-### How to
-
-- **Jump higher, float longer:** hold jump; keep holding over the top to hang a little. Let go early for a short hop.
-- **Queued jump and coyote time:** press jump a moment before landing and the hero jumps the instant it touches down; a moment after running off a ledge still counts as on the ground.
-- **Double jump:** jump again in the air. A wall gives it back.
-- **Run and sprint:** moving is running. Hold sprint for a higher top speed (hybrid); in the Meat Boy preset you walk, and hold the button to run, as in Super Meat Boy. The extra speed carries into jumps.
-- **Roll:** drop from 6 tiles (48 px) or more and keep holding left or right as you land, or tap down while sprinting. Jump during the roll to keep its speed. The tower on the left and the chimney lids are high enough.
-- **Hard landing:** drop from 12 tiles (96 px) or more without holding a direction. A jump pressed just before landing skips both the roll and the hard landing.
-- **Glide** (hybrid, Silksong-like): press jump in the air and keep holding it. The press spends the double jump first if one is left; once falling, the cloak opens and the fall slows to a drift.
-- **Dash:** with a direction (eight ways, up and down included) or without one (the way you face). The ground, a wall (not in Celeste) or a crystal gives it back.
-- **Wall jump:** hold toward a wall while falling to slide, then jump. The stick aims it: toward the wall kicks you back onto it higher up (repeat to climb a wall; the chimneys are there for that), away leaps off, and up and down tilt the jump.
-- **Climb:** hold grab against a wall; up and down climb until the stamina runs out, and climbing past the top hops over. A tired grip slips.
-- **Dive:** down + dive in the air: a short hang, then straight down.
-- **Super dash** (hybrid, Hollow Knight-like): hold the button standing, or while sliding down or holding on to a wall, until she flashes (0.8 s; crystal light gathers around her while it charges), then let go. The hero flies straight and level, over gaps, away from the wall it charged on, until a wall stops it. Jump or the button again cancels the flight; letting go early or jumping cancels the charge.
-- **Drop through:** down + jump on a thin platform.
-- **Push and pull:** walk into a box to push it; hold grab facing it and walk away to pull it.
-- **Look up and down:** hold up or down while standing still.
-
-## Feel presets
-
-All the movement numbers and ability switches live in one `Tuning` struct, and the presets set it to lean toward one game each. They are approximations by feel, not measured copies, and a few of the rules (walls giving back the double jump, for one) are my own choices rather than verified behavior.
-
-| Preset | What it's like |
-|---|---|
-| hybrid (default) | everything on, Celeste-like numbers with Hollow Knight's heavier fall and jump cut |
-| celeste-like | precise and floaty: 8-way dash, climbing with stamina, no air jump, no jump cut, no dive |
-| hollow-knight-like | snappy: instant run, hard jump cut, a double jump with wings, sideways dash, super dash, wall cling that slips, dive, hard landings |
-| silksong-like | Hollow Knight's feel with a glide after the double jump, and no dive |
-| meat-boy-like | walk or hold to run, momentum, strong wall jumps, wall stick, and nothing else |
-
-## The controller, in a few lines
-
-The animation side is its own module (`src/anim/`) and knows nothing about the game. A graph is written by name, compiled into a validated graph of ids, and run by an `Animator`; each step, a driver writes the parameters from whatever it is animating:
+A graph is written by name and compiled; every name is checked, and a parameter used as the wrong kind fails here rather than on the first frame that needs it:
 
 ```rust
+use animation::anim::{Animator, Clip, Cond, GraphSpec, Playback, StateSpec, TransitionSpec};
+
 let graph = GraphSpec::new()
     .float("speed")
     .trigger("jump", 0.05)
@@ -101,57 +39,120 @@ let graph = GraphSpec::new()
     .state(StateSpec::new("takeoff", Clip::uniform(Playback::Once, &[7], 0.06)).then("idle"))
     .transition(TransitionSpec::new(["idle"], "run", Cond::Above("speed".into(), 10.0)))
     .transition(TransitionSpec::new(["run"], "idle", Cond::Below("speed".into(), 10.0)))
-    .transition(
-        TransitionSpec::any("takeoff", Cond::Trigger("jump".into()))
-            .priority(70)
-            .breaks_lock(),
-    )
+    .transition(TransitionSpec::any("takeoff", Cond::Trigger("jump".into())).priority(70).breaks_lock())
     .compile()?;
-
 let mut animator = Animator::new(Arc::new(graph));
 ```
 
-Beyond a plain state machine, the controller provides:
+Each step, set the parameters (or let a `Driver` do it), call `animator.update(dt)`, draw `animator.sprite()`, and take `animator.drain_events()` for markers like `"step"`. What it adds over a plain state machine:
 
-- Triggers have a time to live. An event fired while a state is locked out (a flip that must finish, a hard landing) isn't lost; it waits until a transition consumes it or its time runs out. This is input queueing on the animation side.
-- States can lock, transitions have priorities. A state can refuse all but lock-breaking transitions for a while, and transitions are tried highest priority first, so a dive impact always beats a landing.
-- Clips have rates and markers. The run cycle plays at a rate scaled by the speed, climbing stops when the hero does, and named markers (`"step"`) come out as events for sound and dust.
-- Specs are validated. Unknown states, duplicate names and a parameter used as the wrong kind (a float tested as a trigger) fail at compile time, not on the first frame that happens to need them.
-- Names are `Cow<'static, str>`. A graph written in code borrows its names for free; one built from data owns them.
+- Triggers with a time to live: an event fired while a state is locked isn't lost; it waits until a transition consumes it or expires. Input queueing, on the animation side.
+- Locks and priorities: a state can refuse all but lock-breaking transitions for a while, and the highest-priority transition wins, so an impact beats a landing.
+- Clip rates and markers: a run cycle keeps pace with the speed, a climb stops when the body does, and markers drive footstep sounds, dust or anything else.
+- Names as `Cow<'static, str>`: free for graphs written in code, owned for graphs built from data.
 
-The hero's own graph (`src/hero/graph.rs`) has 36 states, and the pattern holds throughout: events (jump, land, dash) enter states through triggers, continuous facts (running, climbing, gliding) keep or leave them through bools and floats.
+### The movement
 
-## Seeing what it does
+```rust
+use animation::sim::{Intent, Level, Preset, World};
 
-Most of the tooling exists to inspect the animation:
+let mut world = World::new(Level::demo(), Preset::Celeste.tuning());
+world.step(&Intent { move_x: 1.0, jump_pressed: true, jump_held: true, ..Intent::default() });
+for event in &world.events { /* Jumped, Landed, Dashed, RollStarted, ... */ }
+```
+
+Step it at a fixed `DT` and latch button presses between steps, so a press in a frame without a step isn't lost (`src/session.rs` does both). Your own level goes in as ASCII rows (`Level::parse`), your own feel as a `Tuning`.
+
+### Connecting the two
+
+The pattern that keeps the graph readable: events enter states through triggers, continuous facts keep or leave them through bools and floats. `src/hero/driver.rs` is a complete example, and the per-step loop is three lines:
+
+```rust
+world.step(&intent);
+driver.drive(&world, &mut animator.params);
+animator.update(DT);
+```
+
+To add a move: give the simulation a mode or rule and an `Event` (with a test), add a trigger or bool and a state with its transitions to the graph, map the event in the driver, and give the new sprite numbers a pose. `docs/animation.md` has the details.
+
+### Your art
+
+The graph only names sprite numbers. Draw them however you like: this repository draws a cut-out puppet (`src/render/mouse.rs`, with `src/hero/pose.rs` saying what each number means for the body); a sprite sheet would map each number to a cell instead.
+
+## The moves
+
+Everything the movement does, each tunable and each animated:
+
+- jumping: a jump buffer, coyote time, variable height, a jump cut on release, hangtime at the apex, and a heavier fall,
+- in the air: a double jump, a glide after it, 8-way dashes with recharge from the ground, walls or pickups, and a dive,
+- on walls: sliding, sticking, stick-aimed wall jumps that can scale a single wall, and climbing with stamina and a firm or slipping grip,
+- on the ground: running and sprinting, rolls out of high landings or a sprint, hard landings, a charged super dash, drop-through platforms, and looking up and down,
+- with boxes: pushing and pulling, with a little static friction,
+- details: corner correction and a skid when turning around.
+
+| | |
+|---|---|
+| ![Super dash across the floor, ending in a bonk](docs/art/super-dash.png) | ![Glide after the double jump, Silksong-like preset](docs/art/glide.png) |
+| ![Bouncing up the narrow chimney](docs/art/chimney-bounce.png) | ![Push, hold and pull a box](docs/art/push-pull.png) |
+
+The pictures are filmstrips (`task snapshot`): a scripted move played headless, with the animation states it went through as the caption.
+
+### Feel presets
+
+Starting points for your own `Tuning`. They lean toward each game by feel; they are not measured copies.
+
+| Preset | What it's like |
+|---|---|
+| hybrid (default) | everything on, Celeste-like numbers with Hollow Knight's heavier fall and jump cut |
+| celeste-like | precise and floaty: 8-way dash, climbing with stamina, no air jump, no jump cut |
+| hollow-knight-like | snappy: instant run, hard jump cut, double jump, sideways dash, super dash, slipping wall cling, dive |
+| silksong-like | Hollow Knight's feel with a glide after the double jump |
+| meat-boy-like | walk or hold to run, momentum, strong wall jumps, wall stick |
+
+## Trying it
+
+```sh
+task run
+```
+
+Arrows, left stick or d-pad move. The buttons follow the preset (F2 switches both; the overlay's corner shows the keys):
+
+| Action | Hollow Knight-like, Silksong-like, hybrid | Celeste-like | Meat Boy-like |
+|---|---|---|---|
+| jump (hold for height) | Z, Space / A | C, Space / A, Y | Space, Z / A |
+| dash | C / RT | X / X, B | |
+| super dash (hold, release) | S / LT | | |
+| grab (hold) | D / LB | Z / RT, LT, RB, LB | |
+| dive | down + A / down + B, down + RB | | |
+| sprint / run (hold) | Shift / X | | Shift, X / X, RT |
+
+The less obvious ones: roll by landing from 6 tiles or more while holding a direction (or by tapping down while sprinting); scale a wall by wall-jumping with the stick toward it; charge the super dash until she flashes, then let go; drop through a thin platform with down + jump; pull a box with grab held while walking away.
 
 ![The compact debug overlay](docs/art/overlay.png)
 
-- The overlay (F1: compact, full, off) shows the current state, frame and lock, the body's mode and speed, timer bars for the jump buffer, coyote time, dash buffer, variable jump and stamina, every active parameter and pending trigger, and the last few events.
-- The clock: P pauses, `.` steps a single 1/120 s frame, `[` and `]` go from 1/16 to double speed, `\` resets. Presses made between steps are held over, so even slow motion never drops one.
-- Filmstrips: `task snapshot` plays every scripted move headless and writes the PNGs above into `snapshots/` (`task snapshot -- roll glide` for just some).
-- Determinism: the simulation and the animator advance in the same fixed step, so a cloned world plays out frame for frame identically (there's a test for that).
+For inspecting the animation: F1 cycles the overlay (state, frame, lock, timers, active parameters, events), P pauses, `.` steps one 1/120 s frame, `[` and `]` change speed down to 1/16, and F3 switches to a diagnostic look (state-colored blocks on a plain backdrop).
 
 ## Building
 
 ```sh
-task run          # play
-task test         # movement rules, determinism, controller, hero graph
+task test         # movement rules, determinism, controller, hero graph, doc examples
 task snapshot     # filmstrips of every scripted move into snapshots/
-task poses        # the heroine in every sprite pose, one sheet
-task screenshot   # the real window after 2 s, into screenshots/
-task check        # fmt + clippy, warnings as errors (docs required everywhere)
+task poses        # the character in every sprite pose, one sheet
+task check        # fmt + clippy, warnings as errors
 ```
 
-You'll need a Rust toolchain of 1.95 or newer and [go-task](https://taskfile.dev); plain `cargo run` works too.
+You'll need Rust 1.95 or newer and [go-task](https://taskfile.dev); plain `cargo run` and `cargo test` work too.
+
+## The test bench
+
+The test character is the mouse heroine of my game Cheesed, a cut-out puppet with a simulated cape, tail and mane, in a moonlit scene with moss and grass that react to her.
 
 ## Current limitations
 
-- No hand-drawn frames yet (she is a puppet in code), no sound, a single screen without a camera.
-- Graphs and tunings are written in code; loading them from files (and hot-reloading while playing) is next.
-- Silksong's own button layout isn't modeled; its preset borrows Hollow Knight's.
+- Graphs and tunings are written in code; loading them from files (and hot-reloading) is next.
+- No hand-drawn frames, no sound, no camera (a single screen), and no attack move yet.
 
-The design notes are in [docs/](docs/vision.md), starting with the vision, the movement rules and the animation graph, and the roadmap tracks what's next.
+The design notes are in [docs/](docs/vision.md): the vision, the movement rules, the animation graph, and the roadmap.
 
 ## License
 
