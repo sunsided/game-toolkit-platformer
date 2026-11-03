@@ -110,6 +110,14 @@ impl Params {
         self.slots[id.0 as usize].value > 0.0
     }
 
+    /// Set every value back to `defaults`' (by position); parameters beyond those, which
+    /// a driver declared on its own, go back to 0.
+    pub(crate) fn reset_to(&mut self, defaults: &Params) {
+        for (i, s) in self.slots.iter_mut().enumerate() {
+            s.value = defaults.slots.get(i).map_or(0.0, |d| d.value);
+        }
+    }
+
     /// Clear a pending trigger: a transition used it.
     pub(crate) fn consume(&mut self, id: ParamId) {
         self.slots[id.0 as usize].value = 0.0;

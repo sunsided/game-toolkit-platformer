@@ -60,10 +60,11 @@ impl Animator {
         a
     }
 
-    /// Start over: the graph's entry state, its parameters at their defaults, no pending
-    /// triggers, no history. For a character that respawns.
+    /// Start over: the graph's entry state, its parameters at their defaults (and any a
+    /// driver declared on its own at 0), no pending triggers, no history. For a character
+    /// that respawns.
     pub fn reset(&mut self) {
-        self.params = self.graph.params.clone();
+        self.params.reset_to(&self.graph.params);
         self.history.clear();
         // Entering the current state with no time in it leaves no history.
         self.time = 0.0;

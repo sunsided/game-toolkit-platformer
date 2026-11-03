@@ -28,6 +28,17 @@ All in `src/anim/`; the hero's binding in `src/hero/`.
 - **Driver**: `Driver<S>` writes parameters from a subject; any `FnMut(&S, &mut Params)` is
   one.
 
+## Your own graph and drivers
+
+`Builder::graph` takes a graph of your own that declares every parameter the built-in
+`HeroDriver` writes (a missing one is an error, which catches typos);
+`Builder::partial_graph` takes one that declares only what it uses. `Builder::driver`
+adds drivers of your own, run after the built-in one each step, for your game's
+parameters (`hurt`, `attacking`) or to override the built-in values;
+`Builder::without_hero_driver` leaves everything to yours. A parameter that only your
+game writes can also be set between updates through `Platformer::animator`: the built-in
+driver never touches it.
+
 ## The hero's graph
 
 Pattern: events enter states through triggers; continuous facts keep or leave them

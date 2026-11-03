@@ -24,6 +24,8 @@
 
 use std::sync::Arc;
 
+#[cfg(test)]
+use crate::anim::Params;
 use crate::anim::{AnimEvent, Animator, Driver, GraphSpec, SpecError};
 #[cfg(feature = "toolkit")]
 use crate::controls::{Controls, Scheme};
@@ -43,8 +45,10 @@ pub struct Platformer {
     pub world: World,
     /// The animation graph's runtime.
     pub animator: Animator,
-    /// Movement facts and events to graph parameters.
-    driver: HeroDriver,
+    /// Movement facts and events to graph parameters (unless turned off).
+    driver: Option<HeroDriver>,
+    /// Your own drivers, run after the built-in one each step.
+    drivers: Vec<Box<dyn Driver<World>>>,
     /// The preset the tuning came from, if any.
     preset: Option<Preset>,
     /// Frame time not yet stepped.
@@ -84,6 +88,12 @@ pub struct Builder {
     preset: Option<Preset>,
     /// A custom animation graph, or the built-in one.
     graph: Option<GraphSpec>,
+    /// The graph may leave out the built-in driver's parameters.
+    partial: bool,
+    /// Run the built-in driver.
+    hero_driver: bool,
+    /// Your own drivers, run after the built-in one.
+    drivers: Vec<Box<dyn Driver<World>>>,
     /// Where to start.
     spawn: Spawn,
     /// Put it back at the start after falling out.
@@ -115,9 +125,37 @@ impl Builder {
 
     /// An animation graph of your own instead of the built-in one. It has to declare the
     /// parameters the built-in driver writes (see `hero::spec`), though it may ignore any
-    /// of them; [`Builder::build`] says which one is missing.
+    /// of them; [`Builder::build`] says which one is missing (a typo, say). For a graph
+    /// that declares only what it uses, see [`Builder::partial_graph`].
     pub fn graph(mut self, graph: GraphSpec) -> Self {
         self.graph = Some(graph);
+        self.partial = false;
+        self
+    }
+
+    /// An animation graph of your own that declares only the built-in driver's
+    /// parameters it uses: the rest are written but never read. A misspelled one goes
+    /// unnoticed, which [`Builder::graph`] would catch.
+    pub fn partial_graph(mut self, graph: GraphSpec) -> Self {
+        self.graph = Some(graph);
+        self.partial = true;
+        self
+    }
+
+    /// A driver of your own, run after the built-in one every step (several run in the
+    /// order added): for parameters of your game (`hurt`, `attacking`, `carrying`), or to
+    /// override what the built-in one wrote. A closure `|world: &World, params: &mut
+    /// Params| ...` is a driver. Parameters only your game sets (not the built-in driver)
+    /// can also be set between updates through [`Platformer::animator`].
+    pub fn driver(mut self, driver: impl Driver<World> + 'static) -> Self {
+        self.drivers.push(Box::new(driver));
+        self
+    }
+
+    /// Run without the built-in driver: your drivers ([`Builder::driver`]) set every
+    /// parameter, and the graph needn't declare the built-in ones.
+    pub fn without_hero_driver(mut self) -> Self {
+        self.hero_driver = false;
         self
     }
 
@@ -158,8 +196,12 @@ impl Builder {
     /// The character, or why the animation graph doesn't fit.
     pub fn build(self) -> Result<Platformer, SpecError> {
         let graph = self.graph.unwrap_or_else(spec).compile()?;
-        let animator = Animator::new(Arc::new(graph));
-        let driver = HeroDriver::try_new(&animator.params)?;
+        let mut animator = Animator::new(Arc::new(graph));
+        let driver = match (self.hero_driver, self.partial) {
+            (false, _) => None,
+            (true, false) => Some(HeroDriver::try_new(&animator.params)?),
+            (true, true) => Some(HeroDriver::declaring(&mut animator.params)),
+        };
         let spawn = match self.spawn {
             Spawn::At(x, y) => (x, y),
             Spawn::Standing { x, floor } => Player::standing_at(x, floor),
@@ -171,6 +213,7 @@ impl Builder {
             world,
             animator,
             driver,
+            drivers: self.drivers,
             preset: self.preset,
             acc: 0.0,
             latch: Intent::default(),
@@ -213,6 +256,9 @@ impl Platformer {
             tuning: Preset::Hybrid.tuning(),
             preset: Some(Preset::Hybrid),
             graph: None,
+            partial: false,
+            hero_driver: true,
+            drivers: Vec::new(),
             spawn: Spawn::At(0, 0),
             respawn: true,
             #[cfg(feature = "toolkit")]
@@ -265,7 +311,12 @@ impl Platformer {
         self.prev = self.world.player.exact_pos();
         self.world.step(terrain, intent);
         self.events.extend(self.world.events.iter().copied());
-        self.driver.drive(&self.world, &mut self.animator.params);
+        if let Some(d) = &mut self.driver {
+            d.drive(&self.world, &mut self.animator.params);
+        }
+        for d in &mut self.drivers {
+            d.drive(&self.world, &mut self.animator.params);
+        }
         self.animator.update(DT);
         self.anim_events.extend(self.animator.drain_events());
     }
@@ -476,6 +527,99 @@ mod tests {
         ));
         let err = Platformer::builder().graph(tiny).build().err();
         assert!(matches!(err, Some(SpecError::UnknownParam(_))), "{err:?}");
+    }
+
+    /// Idle while grounded, air otherwise, by the `grounded` bool alone.
+    fn two_state_graph() -> GraphSpec {
+        use crate::anim::{Cond, TransitionSpec};
+        let c = |s: u16| Clip::uniform(Playback::Loop, &[s], 0.1);
+        GraphSpec::new()
+            .bool("grounded")
+            .state(StateSpec::new("idle", c(0)))
+            .state(StateSpec::new("air", c(1)))
+            .transition(TransitionSpec::new(
+                ["idle"],
+                "air",
+                Cond::not(Cond::Is("grounded".into())),
+            ))
+            .transition(TransitionSpec::new(
+                ["air"],
+                "idle",
+                Cond::Is("grounded".into()),
+            ))
+    }
+
+    #[test]
+    fn a_partial_graph_gets_only_what_it_declares() {
+        assert!(
+            Platformer::builder()
+                .graph(two_state_graph())
+                .build()
+                .is_err(),
+            "strict by default"
+        );
+        let mut hero = Platformer::builder()
+            .partial_graph(two_state_graph())
+            .spawn_at(20, 40)
+            .build()
+            .unwrap();
+        idle(&mut hero);
+        assert_eq!(hero.state(), "air");
+        for _ in 0..60 {
+            idle(&mut hero);
+        }
+        assert_eq!(hero.state(), "idle");
+        // Starting over clears the parameters the driver added too.
+        hero.respawn();
+        idle(&mut hero);
+    }
+
+    #[test]
+    fn own_drivers_run_after_the_built_in_one() {
+        let hero = |b: Builder| {
+            let mut h = b
+                .graph(spec().bool("fast"))
+                .driver(|w: &World, p: &mut Params| {
+                    let id = p.id("fast").unwrap();
+                    p.set_bool(id, w.player.vx.abs() > 50.0);
+                })
+                .spawn_at(20, 88)
+                .build()
+                .unwrap();
+            for _ in 0..30 {
+                h.advance(
+                    Intent {
+                        move_x: 1.0,
+                        ..Intent::default()
+                    },
+                    &mut floor,
+                    1.0 / 60.0,
+                );
+            }
+            h
+        };
+        let h = hero(Platformer::builder());
+        let fast = h.animator.params.id("fast").unwrap();
+        assert!(h.animator.params.get_bool(fast), "set by the game's driver");
+
+        // Without the built-in driver, nothing else is written.
+        let h = hero(Platformer::builder().without_hero_driver());
+        let grounded = h.animator.params.id("grounded").unwrap();
+        assert!(!h.animator.params.get_bool(grounded));
+        assert!(h.animator.params.get_bool(fast));
+
+        // Later drivers win.
+        let mut h = Platformer::builder()
+            .driver(|_: &World, p: &mut Params| {
+                let id = p.id("grounded").unwrap();
+                p.set_bool(id, false);
+            })
+            .spawn_at(20, 88)
+            .build()
+            .unwrap();
+        idle(&mut h);
+        assert!(h.world.player.grounded);
+        assert!(!h.animator.params.get_bool(grounded));
     }
 
     /// A flat floor at y = 100, wide open above.

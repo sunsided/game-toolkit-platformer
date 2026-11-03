@@ -1,6 +1,6 @@
 //! [`HeroDriver`]: the simulation's facts and events as the hero graph's parameters.
 
-use crate::anim::{Driver, ParamId, Params, SpecError};
+use crate::anim::{Driver, ParamId, ParamKind, Params, SpecError};
 use crate::sim::{Event, JumpKind, Mode, Shove, World};
 
 /// Parameter ids of the hero graph, looked up once.
@@ -88,48 +88,64 @@ impl HeroDriver {
     }
 
     /// Look up the parameters this driver writes in `params`, or say which one a graph
-    /// doesn't declare. A custom graph has to declare all of them (it may ignore any).
+    /// doesn't declare. A custom graph has to declare all of them (it may ignore any);
+    /// see [`HeroDriver::declaring`] for one that doesn't.
     pub fn try_new(params: &Params) -> Result<Self, SpecError> {
-        let id = |n: &str| {
-            params
-                .id(n)
-                .ok_or_else(|| SpecError::UnknownParam(n.to_string().into()))
+        Self::lookup(&mut params.clone(), false)
+    }
+
+    /// Look up the parameters this driver writes in `params`, declaring the ones a graph
+    /// of your own left out. The graph never reads those, so it can leave out whatever it
+    /// doesn't animate.
+    pub fn declaring(params: &mut Params) -> Self {
+        Self::lookup(params, true).expect("missing parameters are declared")
+    }
+
+    /// Find (or, with `declare`, add) every parameter this driver writes.
+    fn lookup(params: &mut Params, declare: bool) -> Result<Self, SpecError> {
+        const B: ParamKind = ParamKind::Bool;
+        const F: ParamKind = ParamKind::Float;
+        const T: ParamKind = ParamKind::Trigger { ttl: 0.0 };
+        let mut id = |n: &'static str, kind: ParamKind| match params.id(n) {
+            Some(id) => Ok(id),
+            None if declare => Ok(params.declare(n, kind)),
+            None => Err(SpecError::UnknownParam(n.into())),
         };
         Ok(Self {
-            grounded: id("grounded")?,
-            skid: id("skid")?,
-            rolling: id("rolling")?,
-            dashing: id("dashing")?,
-            climbing: id("climbing")?,
-            slipping: id("slipping")?,
-            wall_slide: id("wall_slide")?,
-            hard_landing: id("hard_landing")?,
-            wings: id("wings")?,
-            pushing: id("pushing")?,
-            pulling: id("pulling")?,
-            holding: id("holding")?,
-            gliding: id("gliding")?,
-            super_bonk: id("super_bonk")?,
-            super_launch: id("super_launch")?,
-            super_flying: id("super_flying")?,
-            charged: id("charged")?,
-            charging: id("charging")?,
-            speed: id("speed")?,
-            vy: id("vy")?,
-            dash_y: id("dash_y")?,
-            look: id("look")?,
-            jump: id("jump")?,
-            double: id("double")?,
-            wall_jump: id("wall_jump")?,
-            hop: id("hop")?,
-            drop: id("drop")?,
-            land: id("land")?,
-            roll: id("roll")?,
-            hard: id("hard")?,
-            dash: id("dash")?,
-            grab: id("grab")?,
-            dive: id("dive")?,
-            impact: id("impact")?,
+            grounded: id("grounded", B)?,
+            skid: id("skid", B)?,
+            rolling: id("rolling", B)?,
+            dashing: id("dashing", B)?,
+            climbing: id("climbing", B)?,
+            slipping: id("slipping", B)?,
+            wall_slide: id("wall_slide", B)?,
+            hard_landing: id("hard_landing", B)?,
+            wings: id("wings", B)?,
+            pushing: id("pushing", B)?,
+            pulling: id("pulling", B)?,
+            holding: id("holding", B)?,
+            gliding: id("gliding", B)?,
+            super_bonk: id("super_bonk", T)?,
+            super_launch: id("super_launch", T)?,
+            super_flying: id("super_flying", B)?,
+            charged: id("charged", B)?,
+            charging: id("charging", B)?,
+            speed: id("speed", F)?,
+            vy: id("vy", F)?,
+            dash_y: id("dash_y", F)?,
+            look: id("look", F)?,
+            jump: id("jump", T)?,
+            double: id("double", T)?,
+            wall_jump: id("wall_jump", T)?,
+            hop: id("hop", T)?,
+            drop: id("drop", T)?,
+            land: id("land", T)?,
+            roll: id("roll", T)?,
+            hard: id("hard", T)?,
+            dash: id("dash", T)?,
+            grab: id("grab", T)?,
+            dive: id("dive", T)?,
+            impact: id("impact", T)?,
         })
     }
 }
