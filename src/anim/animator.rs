@@ -60,6 +60,17 @@ impl Animator {
         a
     }
 
+    /// Start over: the graph's entry state, its parameters at their defaults, no pending
+    /// triggers, no history. For a character that respawns.
+    pub fn reset(&mut self) {
+        self.params = self.graph.params.clone();
+        self.history.clear();
+        // Entering the current state with no time in it leaves no history.
+        self.time = 0.0;
+        self.state = self.graph.entry;
+        self.enter(self.state);
+    }
+
     /// Advance `dt` seconds: play the clip, then take the first transition (by priority)
     /// whose condition holds, consuming the triggers it tested; failing that, follow the
     /// state's `next` if its clip finished. Pending triggers then age.
@@ -305,6 +316,25 @@ mod tests {
         for _ in 0..10 {
             step(&mut a, 0.0);
         }
+        assert_eq!(a.state_name(), "idle");
+    }
+
+    #[test]
+    fn reset_starts_over_from_the_entry_state() {
+        let mut a = Animator::new(graph());
+        let jump = a.params.id("jump").unwrap();
+        a.params.fire(jump);
+        step(&mut a, 5.0);
+        assert!(a.locked());
+        a.params.fire(jump);
+        a.reset();
+        assert_eq!(a.state_name(), "idle");
+        assert!(!a.locked());
+        assert!(!a.params.pending(jump), "pending triggers are gone");
+        assert_eq!(a.history().count(), 0);
+        assert!(a.drain_events().contains(&AnimEvent::Entered(a.state())));
+        // The speed went back to its default, so it stays idle.
+        a.update(0.01);
         assert_eq!(a.state_name(), "idle");
     }
 }

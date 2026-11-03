@@ -219,6 +219,46 @@ impl Player {
         }
     }
 
+    /// Set the speed from outside: a spring, a bounce pad, knockback. Whatever the body was
+    /// busy with ends (a dash, a dive, a climb), a jump in progress can no longer be
+    /// sustained or cut, and going up leaves the ground for good (no coyote jump).
+    pub fn launch(&mut self, vx: f32, vy: f32) {
+        self.vx = vx;
+        self.vy = vy;
+        self.stop_jump();
+        self.mode = Mode::Normal;
+        self.force_move = 0.0;
+        self.wall_slide = 0;
+        self.wall_stick = 0.0;
+        self.slipping = false;
+        self.glide_armed = false;
+        if vy < 0.0 {
+            self.grounded = false;
+            self.coyote = 0.0;
+        }
+    }
+
+    /// Put the hitbox's top-left at `x, y` (units) without moving through what's between:
+    /// a door, a portal. The sub-pixel remainder is dropped and the airtime starts over;
+    /// speed and state stay (follow with [`Player::launch`] to stop it). Teleported into
+    /// the air while standing, it walks off as if from a ledge.
+    pub fn teleport(&mut self, x: i32, y: i32) {
+        self.x = x;
+        self.y = y;
+        self.rem_x = 0.0;
+        self.rem_y = 0.0;
+        self.peak_y = y;
+        self.wall_slide = 0;
+        self.wall_stick = 0.0;
+    }
+
+    /// Refill dashes, air jumps and climbing stamina, as touching the ground does.
+    pub fn refill(&mut self, t: &Tuning) {
+        self.dashes = t.dashes;
+        self.air_jumps = t.air_jumps;
+        self.stamina = t.stamina;
+    }
+
     /// The hitbox.
     pub fn rect(&self) -> Rect {
         Rect {

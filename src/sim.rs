@@ -128,11 +128,20 @@ impl World {
         if terrain.fell_out(body) {
             self.events.push(Event::FellOut);
             if self.respawn {
-                self.player = Player::at(self.spawn, &self.tuning);
-                self.events.push(Event::Respawned);
+                self.respawn_at(self.spawn);
             }
         }
         self.tick += 1;
+    }
+
+    /// Start over with the hitbox's top-left at `at` (units): a fresh body, standing, with
+    /// everything refilled, and an [`Event::Respawned`] in [`World::events`]. For hazards
+    /// and checkpoints; [`World::spawn`] stays as it is.
+    pub fn respawn_at(&mut self, at: (i32, i32)) {
+        self.player = Player::at(at, &self.tuning);
+        self.effort = 0.0;
+        self.last_shove = None;
+        self.events.push(Event::Respawned);
     }
 
     /// The box the character strains against but which hasn't budged yet, if any (by the

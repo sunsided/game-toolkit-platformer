@@ -280,6 +280,47 @@ impl Platformer {
         self.world.player.rect()
     }
 
+    /// Set the speed from outside: a spring, a bounce pad, knockback (units/s, y down). It
+    /// ends a dash or a climb, can't be cut by releasing jump, and going up leaves the
+    /// ground. See [`Player::launch`](crate::sim::Player::launch).
+    pub fn launch(&mut self, vx: f32, vy: f32) {
+        self.world.player.launch(vx, vy);
+    }
+
+    /// Put the hitbox's top-left at `x, y` (units) at once, without drawing it sliding
+    /// there: a door, a portal. Speed and state stay; see
+    /// [`Player::teleport`](crate::sim::Player::teleport).
+    pub fn teleport(&mut self, x: i32, y: i32) {
+        self.world.player.teleport(x, y);
+        self.prev = self.world.player.exact_pos();
+    }
+
+    /// Start over at the spawn point: a fresh body, the animation from its entry state, and
+    /// an [`Event::Respawned`]. For hazards; see [`Platformer::set_spawn`] for checkpoints.
+    pub fn respawn(&mut self) {
+        self.respawn_at(self.world.spawn.0, self.world.spawn.1);
+    }
+
+    /// Start over with the hitbox's top-left at `x, y` (units), like
+    /// [`Platformer::respawn`], without moving the spawn point.
+    pub fn respawn_at(&mut self, x: i32, y: i32) {
+        self.world.respawn_at((x, y));
+        self.events.push(Event::Respawned);
+        self.prev = self.world.player.exact_pos();
+        self.animator.reset();
+    }
+
+    /// Where [`Platformer::respawn`] (and falling out) puts the character from now on
+    /// (hitbox top-left, units): a checkpoint.
+    pub fn set_spawn(&mut self, x: i32, y: i32) {
+        self.world.spawn = (x, y);
+    }
+
+    /// Refill dashes, air jumps and climbing stamina: a pickup, a checkpoint.
+    pub fn refill(&mut self) {
+        self.world.player.refill(&self.world.tuning);
+    }
+
     /// The preset the tuning came from, if any.
     pub fn preset(&self) -> Option<Preset> {
         self.preset
@@ -353,6 +394,119 @@ mod tests {
         ));
         let err = Platformer::builder().graph(tiny).build().err();
         assert!(matches!(err, Some(SpecError::UnknownParam(_))), "{err:?}");
+    }
+
+    /// A flat floor at y = 100, wide open above.
+    fn floor(r: Rect) -> bool {
+        r.bottom() > 100
+    }
+
+    /// One frame of 1/60 s without input on the flat floor.
+    fn idle(hero: &mut Platformer) -> Vec<Event> {
+        hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
+        hero.drain_events()
+    }
+
+    #[test]
+    fn a_launch_is_not_cut_and_leaves_the_ground() {
+        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        idle(&mut hero);
+        assert!(hero.world.player.grounded);
+        hero.launch(0.0, -300.0);
+        // Jump isn't held: a jump would be cut now, a spring isn't.
+        let events = idle(&mut hero);
+        assert!(!events.contains(&Event::JumpCut), "{events:?}");
+        assert!(!hero.world.player.grounded);
+        assert!(hero.world.player.vy < -250.0, "{}", hero.world.player.vy);
+        assert!(hero.hitbox().y < 88);
+    }
+
+    #[test]
+    fn a_launch_ends_a_dash() {
+        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        idle(&mut hero);
+        let dash = Intent {
+            move_x: 1.0,
+            dash_pressed: true,
+            ..Intent::default()
+        };
+        hero.advance(dash, &mut floor, 1.0 / 60.0);
+        assert!(matches!(
+            hero.world.player.mode,
+            crate::sim::Mode::Dash { .. }
+        ));
+        hero.launch(-100.0, -200.0);
+        assert_eq!(hero.world.player.mode, crate::sim::Mode::Normal);
+        idle(&mut hero);
+        assert!(hero.world.player.vx < 0.0, "knocked back");
+    }
+
+    #[test]
+    fn a_teleport_snaps_without_smearing() {
+        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        // Half a step of leftover time, so drawing would blend between two positions.
+        hero.advance(Intent::default(), &mut floor, 1.5 * DT);
+        hero.teleport(150, 40);
+        assert_eq!(hero.position(), (150.0, 40.0));
+        assert_eq!(hero.hitbox().x, 150);
+        // It falls from there to the floor and lands.
+        let mut events = Vec::new();
+        for _ in 0..60 {
+            events.extend(idle(&mut hero));
+        }
+        assert!(hero.world.player.grounded);
+        assert_eq!(hero.hitbox().bottom(), 100);
+        assert!(
+            events
+                .iter()
+                .any(|e| matches!(e, Event::Landed { drop, .. } if *drop >= 40)),
+            "{events:?}"
+        );
+    }
+
+    #[test]
+    fn respawning_resets_body_and_animation_and_says_so() {
+        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        let run = Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        };
+        for _ in 0..20 {
+            hero.advance(run, &mut floor, 1.0 / 60.0);
+        }
+        hero.world.player.dashes = 0;
+        hero.drain_events();
+        assert_ne!(hero.state(), "idle");
+
+        hero.set_spawn(60, 88);
+        hero.respawn();
+        assert_eq!(hero.drain_events(), vec![Event::Respawned]);
+        assert_eq!(hero.hitbox().x, 60);
+        assert_eq!(hero.position(), (60.0, 88.0));
+        assert_eq!(hero.world.player.vx, 0.0);
+        assert_eq!(hero.world.player.dashes, hero.world.tuning.dashes);
+        assert_eq!(hero.state(), "idle");
+
+        hero.respawn_at(100, 88);
+        assert_eq!(hero.hitbox().x, 100);
+        assert_eq!(
+            hero.world.spawn,
+            (60, 88),
+            "respawn_at doesn't move the spawn"
+        );
+    }
+
+    #[test]
+    fn refill_restores_dashes_air_jumps_and_stamina() {
+        let mut hero = Platformer::at(20, 88, Preset::Snappy);
+        let p = &mut hero.world.player;
+        (p.dashes, p.air_jumps, p.stamina) = (0, 0, 0.0);
+        hero.refill();
+        let (p, t) = (&hero.world.player, &hero.world.tuning);
+        assert_eq!(
+            (p.dashes, p.air_jumps, p.stamina),
+            (t.dashes, t.air_jumps, t.stamina)
+        );
     }
 
     #[test]
