@@ -1,8 +1,8 @@
 //! [`Foliage`]: moss hanging under the platforms and grass on the rock tops, each sprig a
 //! little spring-damped pendulum. Drawing only; the simulation never sees it.
 //!
-//! Sprigs lean with the wind (the breeze stronger higher up, gusts on top, in the wind's
-//! real direction), bend aside where the heroine brushes through, and take a push from
+//! Sprigs hang or stand still in calm air and lean and flutter in a gust (the ones the
+//! streaks in the sky show; stronger higher up, in the gust's real direction), bend aside where the heroine brushes through, and take a push from
 //! what she does: every footstep the animation controller marks rustles the grass under
 //! that foot, and landings, rolls, dashes, dives and the super dash shove sprigs nearby
 //! away from her.
@@ -27,6 +27,8 @@ pub struct Sprig {
     vel: f32,
     /// How hard it springs back.
     stiff: f32,
+    /// Its own flutter: radians/s and a starting phase.
+    flutter: (f32, f32),
 }
 
 impl Sprig {
@@ -39,7 +41,9 @@ impl Sprig {
 }
 
 /// How much sideways wind (units/s²) leans a sprig (radians/s²).
-const WIND_LEAN: f32 = 0.03;
+const WIND_LEAN: f32 = 0.025;
+/// How much the wind's strength makes a sprig flutter (radians/s² per unit/s²).
+const FLUTTER: f32 = 0.012;
 /// Damping of the sway.
 const DAMPING: f32 = 5.0;
 /// How far a sprig may bend, radians.
@@ -93,7 +97,9 @@ impl Foliage {
                             hangs: true,
                             angle: 0.0,
                             vel: 0.0,
-                            stiff: 40.0 + (h / 50 % 30) as f32,
+                            // Moss is light and hangs loose.
+                            stiff: 8.0 + (h / 50 % 8) as f32,
+                            flutter: (2.0 + (h % 17) as f32 * 0.15, (h % 628) as f32 / 100.0),
                         });
                     }
                 }
@@ -109,6 +115,7 @@ impl Foliage {
                             angle: 0.0,
                             vel: 0.0,
                             stiff: 110.0 + (h / 40 % 60) as f32,
+                            flutter: (4.0 + (h % 13) as f32 * 0.3, (h % 628) as f32 / 100.0),
                         });
                     }
                 }
@@ -120,14 +127,16 @@ impl Foliage {
     /// One step of `dt`: wind at simulation step `tick`, and the heroine's `body` (units)
     /// moving at `vel` (units/s) brushing through.
     pub fn step(&mut self, tick: u64, body: Rect, vel: (f32, f32), dt: f32) {
-        // The breeze changes with height; sample it at the top and bottom once.
-        let (high, low) = (Wind::at(tick, 0.0), Wind::at(tick, 216.0));
+        // Only gusts move the plants (the breeze is for her mane and cape); a gust pushes
+        // harder higher up.
+        let gust = Wind::at(tick, 0.0).push.0;
         for s in &mut self.sprigs {
-            let t = (s.y / 216.0).clamp(0.0, 1.0);
-            let breeze = high.breeze + (low.breeze - high.breeze) * t;
-            // The breeze blows from the moon's side, right to left, like the gusts.
-            let wind = -breeze + high.push.0;
-            let mut acc = -s.stiff * s.angle - DAMPING * s.vel + wind * WIND_LEAN;
+            let height = 1.0 - (s.y / 216.0).clamp(0.0, 1.0);
+            let wind = gust * (0.6 + 0.6 * height);
+            // Leaning with the wind, and fluttering in it: the stronger, the livelier.
+            let t = tick as f32 / 120.0;
+            let flutter = (t * s.flutter.0 + s.flutter.1).sin() * wind.abs() * FLUTTER;
+            let mut acc = -s.stiff * s.angle - DAMPING * s.vel + wind * WIND_LEAN + flutter;
             let (lo, hi) = if s.hangs {
                 (s.y, s.y + s.len)
             } else {
@@ -189,6 +198,7 @@ mod tests {
                 angle: 0.0,
                 vel: 0.0,
                 stiff: 120.0,
+                flutter: (5.0, 0.0),
             }],
         };
         let calm = (0..120 * 60)
@@ -227,5 +237,45 @@ mod tests {
         {
             assert!((s.vel > 0.0) == (s.x >= x), "{s:?}");
         }
+    }
+
+    #[test]
+    fn moss_hangs_still_in_calm_air_and_sways_in_a_gust() {
+        let mut f = Foliage::grow(&Level::demo());
+        let away = Rect {
+            x: -100,
+            y: -100,
+            w: 1,
+            h: 1,
+        };
+        let moss = |f: &Foliage| -> Vec<f32> {
+            f.sprigs
+                .iter()
+                .filter(|s| s.hangs)
+                .map(|s| s.angle)
+                .collect()
+        };
+        let calm = (600..120 * 60)
+            .find(|&k| Wind::at(k, 0.0).gust == 0.0 && Wind::at(k - 240, 0.0).gust == 0.0)
+            .unwrap();
+        for k in calm - 240..=calm {
+            f.step(k, away, (0.0, 0.0), 1.0 / 120.0);
+        }
+        let still = moss(&f).iter().map(|a| a.abs()).fold(0.0f32, f32::max);
+        assert!(still < 0.02, "calm: hangs straight ({still})");
+        let peak = (0..120 * 60)
+            .max_by(|a, b| Wind::at(*a, 0.0).gust.total_cmp(&Wind::at(*b, 0.0).gust))
+            .unwrap();
+        let mut f = Foliage::grow(&Level::demo());
+        let mut leans = Vec::new();
+        for k in peak - 120..peak + 120 {
+            f.step(k, away, (0.0, 0.0), 1.0 / 120.0);
+            leans.push(moss(&f).iter().sum::<f32>() / moss(&f).len() as f32);
+        }
+        let deepest = leans.iter().copied().fold(0.0f32, f32::min);
+        assert!(
+            deepest < -0.15,
+            "gust: leans with it (right to left): {deepest}"
+        );
     }
 }
