@@ -89,8 +89,20 @@ pub trait Terrain {
     }
 
     /// Once per step after the character moved, with its body `hero`: let things fall,
-    /// refills come back, and so on. Default: nothing.
+    /// refills come back, platforms move, and so on. Default: nothing.
     fn update(&mut self, _dt: f32, _hero: Rect) {}
+
+    /// How far the solid (or one-way platform) overlapping `r` moved in the last
+    /// [`Terrain::update`], in units: moving platforms, elevators. Default: nothing moves.
+    ///
+    /// Asked right after `update` with what the character rode before it: the row just
+    /// under its feet while standing, the column beside it while holding on to a wall.
+    /// The world then carries it along by as much, stopping at walls and ceilings, and a
+    /// jump off keeps that speed ([`super::Tuning::lift_boost`]). Moving solids don't push
+    /// the character otherwise: keep them from moving into it from the side or above.
+    fn carry(&self, _r: Rect) -> (f32, f32) {
+        (0.0, 0.0)
+    }
 }
 
 /// Any `Fn(Rect) -> bool` is a terrain of solid ground.

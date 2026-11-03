@@ -102,6 +102,13 @@ impl Player {
                 self.peak_y = self.y;
             }
         }
+        // Off moving ground (or a moving wall): keep its speed, upward only.
+        let (lx, ly) = self.lift;
+        self.vx += lx * t.lift_boost;
+        self.vy += ly.min(0.0) * t.lift_boost;
+        self.var_jump_speed -= ly.min(0.0) * t.lift_boost;
+        self.lift = (0.0, 0.0);
+        self.lift_time = 0.0;
         self.mode = Mode::Normal;
         self.buffer = 0.0;
         self.can_cut = true;

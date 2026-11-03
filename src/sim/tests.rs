@@ -1509,3 +1509,212 @@ fn a_bigger_body_collides_by_its_own_size() {
     );
     assert!(big.player.grounded);
 }
+
+/// A floor at y = 200 and one moving platform, 32x8, at a steady speed.
+#[derive(Clone)]
+struct Elevator {
+    /// The platform now.
+    plat: Rect,
+    /// The platform before the last update.
+    prev: Rect,
+    /// Its speed, units/s.
+    v: (f32, f32),
+    /// Sub-unit motion not yet moved.
+    rem: (f32, f32),
+}
+
+impl Elevator {
+    /// A platform with its top-left at `x, y` moving at `v`.
+    fn new(x: i32, y: i32, v: (f32, f32)) -> Self {
+        let plat = Rect { x, y, w: 32, h: 8 };
+        Self {
+            plat,
+            prev: plat,
+            v,
+            rem: (0.0, 0.0),
+        }
+    }
+}
+
+impl Terrain for Elevator {
+    fn solid(&self, r: Rect) -> bool {
+        r.bottom() > 200 || r.intersects(self.plat)
+    }
+
+    fn update(&mut self, dt: f32, _hero: Rect) {
+        self.prev = self.plat;
+        self.rem.0 += self.v.0 * dt;
+        self.rem.1 += self.v.1 * dt;
+        let (nx, ny) = (self.rem.0.round(), self.rem.1.round());
+        self.rem = (self.rem.0 - nx, self.rem.1 - ny);
+        self.plat.x += nx as i32;
+        self.plat.y += ny as i32;
+    }
+
+    fn carry(&self, r: Rect) -> (f32, f32) {
+        if r.intersects(self.prev) {
+            (
+                (self.plat.x - self.prev.x) as f32,
+                (self.plat.y - self.prev.y) as f32,
+            )
+        } else {
+            (0.0, 0.0)
+        }
+    }
+}
+
+/// A character standing on `e`'s platform, 10 units in from its left edge.
+fn on_elevator(e: &Elevator, tuning: Tuning) -> World {
+    World::new(tuning, (e.plat.x + 10, e.plat.y - player::H))
+}
+
+#[test]
+fn moving_ground_carries_the_character_along() {
+    for v in [
+        (30.0, 0.0),
+        (-45.0, 0.0),
+        (0.0, -40.0),
+        (0.0, 50.0),
+        (25.0, -25.0),
+    ] {
+        let mut e = Elevator::new(80, 120, v);
+        let mut w = on_elevator(&e, Tuning::default());
+        let mut events = Vec::new();
+        for _ in 0..120 {
+            w.step(&mut e, &Intent::default());
+            events.extend(w.events.iter().copied());
+        }
+        let r = w.player.rect();
+        assert!(w.player.grounded, "{v:?}: still standing");
+        assert_eq!(r.bottom(), e.plat.y, "{v:?}: on top of it");
+        assert_eq!(r.x - e.plat.x, 10, "{v:?}: where it stood on it");
+        assert!(!e.solid(r), "{v:?}: not stuck in it");
+        assert!(
+            !events
+                .iter()
+                .any(|e| matches!(e, Event::LeftGround | Event::Landed { .. })),
+            "{v:?}: {events:?}"
+        );
+    }
+}
+
+#[test]
+fn moving_ground_stops_at_walls_and_ceilings() {
+    // Rising toward a ceiling at y = 60 that the platform passes beside.
+    struct Lid(Elevator);
+    impl Terrain for Lid {
+        fn solid(&self, r: Rect) -> bool {
+            self.0.solid(r) || (r.y < 60 && r.x < 100)
+        }
+        fn update(&mut self, dt: f32, hero: Rect) {
+            self.0.update(dt, hero);
+        }
+        fn carry(&self, r: Rect) -> (f32, f32) {
+            self.0.carry(r)
+        }
+    }
+    let mut lid = Lid(Elevator::new(80, 120, (0.0, -40.0)));
+    let mut w = on_elevator(&lid.0, Tuning::default());
+    while lid.0.plat.y > 72 {
+        w.step(&mut lid, &Intent::default());
+        assert!(!w.events.contains(&Event::Squished));
+    }
+    assert_eq!(w.player.y, 60, "held under the ceiling");
+    assert!(!lid.solid(w.player.rect()));
+    // The platform keeps rising into the feet (a unit every three steps).
+    let squished = (0..4).any(|_| {
+        w.step(&mut lid, &Intent::default());
+        w.events.contains(&Event::Squished)
+    });
+    assert!(squished);
+
+    // Sideways into a wall: held there, the platform slides on under the feet.
+    struct Wall(Elevator);
+    impl Terrain for Wall {
+        fn solid(&self, r: Rect) -> bool {
+            self.0.solid(r) || r.right() > 120
+        }
+        fn update(&mut self, dt: f32, hero: Rect) {
+            self.0.update(dt, hero);
+        }
+        fn carry(&self, r: Rect) -> (f32, f32) {
+            self.0.carry(r)
+        }
+    }
+    let mut wall = Wall(Elevator::new(60, 120, (30.0, 0.0)));
+    let mut w = on_elevator(&wall.0, Tuning::default());
+    for _ in 0..200 {
+        w.step(&mut wall, &Intent::default());
+        assert!(!w.events.contains(&Event::Squished));
+    }
+    assert_eq!(w.player.rect().right(), 120, "against the wall");
+}
+
+#[test]
+fn jumping_off_moving_ground_keeps_its_speed_per_tuning() {
+    let press = Intent {
+        jump_pressed: true,
+        jump_held: true,
+        ..Intent::default()
+    };
+    let launch = |boost: f32, v: (f32, f32)| {
+        let t = Tuning {
+            lift_boost: boost,
+            ..Tuning::default()
+        };
+        let mut e = Elevator::new(80, 120, v);
+        let mut w = on_elevator(&e, t);
+        for _ in 0..60 {
+            w.step(&mut e, &Intent::default());
+        }
+        w.step(&mut e, &press);
+        (w.player.vx, w.player.vy, t.jump_speed)
+    };
+    let (vx, _, _) = launch(1.0, (60.0, 0.0));
+    assert!((vx - 60.0).abs() < 6.0, "keeps the ride's speed: {vx}");
+    let (vx, _, _) = launch(0.0, (60.0, 0.0));
+    assert!(vx.abs() < 1.0, "lift boost off: {vx}");
+    let (_, vy, jump) = launch(1.0, (0.0, -60.0));
+    assert!(vy < -jump - 50.0, "rising adds to the jump: {vy}");
+    assert!(vy > -jump - 70.0, "about its speed: {vy}");
+    let (_, vy, jump) = launch(1.0, (0.0, 60.0));
+    assert!(vy <= -jump + 10.0, "sinking takes nothing away: {vy}");
+}
+
+#[test]
+fn a_still_level_carries_nothing() {
+    let mut w = world(room(&[]));
+    run(&mut w, Intent::default(), 60);
+    assert_eq!(w.player.lift, (0.0, 0.0));
+}
+
+#[test]
+fn a_moving_wall_carries_the_character_holding_it() {
+    let climb = |v: (f32, f32)| {
+        let mut e = Elevator::new(0, 0, v);
+        e.plat = Rect {
+            x: 100,
+            y: 40,
+            w: 8,
+            h: 120,
+        };
+        e.prev = e.plat;
+        let mut w = World::new(Tuning::default(), (94, 100));
+        let hold = Intent {
+            move_x: 1.0,
+            grab: true,
+            ..Intent::default()
+        };
+        for _ in 0..60 {
+            w.step(&mut e, &hold);
+        }
+        assert_eq!(w.player.mode, Mode::Climb, "{v:?}");
+        w.player.y
+    };
+    let still = climb((0.0, 0.0));
+    let rising = climb((0.0, -30.0));
+    assert!(
+        (still - rising - 15).abs() <= 1,
+        "half a second at 30 units/s: {still} vs {rising}"
+    );
+}

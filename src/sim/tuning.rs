@@ -333,6 +333,10 @@ pub struct Tuning {
 
     /// Pixels the head may be nudged sideways around a ceiling corner.
     pub corner_correction: i32,
+
+    /// How much of the speed of moving ground (or a moving wall held) a jump off it keeps:
+    /// 1 all of it, 0 none. Kept for [`Tuning::coyote_time`] after leaving it.
+    pub lift_boost: f32,
 }
 
 impl Default for Tuning {
@@ -435,6 +439,7 @@ impl Default for Tuning {
             hard_land_time: 0.3,
 
             corner_correction: 3,
+            lift_boost: 1.0,
         }
     }
 }

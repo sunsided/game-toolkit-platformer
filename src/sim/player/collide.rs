@@ -2,7 +2,7 @@
 //! corner corrections.
 
 use super::Player;
-use crate::sim::{Event, Terrain};
+use crate::sim::{Event, Rect, Terrain};
 
 impl Player {
     /// Whether the hero stands on something: solid ground, or a platform while not
@@ -39,6 +39,64 @@ impl Player {
             self.x += s;
         }
         false
+    }
+
+    /// Carried by moving ground: `dx, dy` units, one at a time, stopping at whatever is
+    /// solid at the edge moved toward (or, going down, at anything to stand on).
+    pub(super) fn carry(&mut self, level: &dyn Terrain, dx: f32, dy: f32) {
+        // Up first: ground that rose into the feet would block a sideways move.
+        if dy < 0.0 {
+            self.carry_y(level, dy);
+            self.carry_x(level, dx);
+        } else {
+            self.carry_x(level, dx);
+            self.carry_y(level, dy);
+        }
+        if self.grounded {
+            self.peak_y = self.y;
+        }
+    }
+
+    /// The sideways part of [`Player::carry`].
+    fn carry_x(&mut self, level: &dyn Terrain, dx: f32) {
+        self.rem_x += dx;
+        let n = self.rem_x.round() as i32;
+        self.rem_x -= n as f32;
+        let s = n.signum();
+        for _ in 0..n.abs() {
+            let r = self.rect();
+            let x = if s > 0 { r.right() } else { r.x - 1 };
+            if level.solid(Rect { x, w: 1, ..r }) {
+                self.rem_x = 0.0;
+                break;
+            }
+            self.x += s;
+        }
+    }
+
+    /// The vertical part of [`Player::carry`].
+    fn carry_y(&mut self, level: &dyn Terrain, dy: f32) {
+        self.rem_y += dy;
+        let n = self.rem_y.round() as i32;
+        self.rem_y -= n as f32;
+        let s = n.signum();
+        for _ in 0..n.abs() {
+            let r = self.rect();
+            let blocked = if s > 0 {
+                self.stands(level)
+            } else {
+                level.solid(Rect {
+                    y: r.y - 1,
+                    h: 1,
+                    ..r
+                })
+            };
+            if blocked {
+                self.rem_y = 0.0;
+                break;
+            }
+            self.y += s;
+        }
     }
 
     /// Move `amount` pixels vertically, one pixel at a time. Going up into a ceiling

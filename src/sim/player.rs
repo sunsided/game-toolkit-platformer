@@ -27,6 +27,11 @@ pub const W: i32 = 6;
 /// The default hitbox height in units ([`Tuning::size`] sets it per character).
 pub const H: i32 = 12;
 
+/// Seconds over which [`Player::lift`] follows the ridden ground's speed. Ground that moves
+/// in whole units moves 1, 0, 1, 0 units per step at half a unit per step; smoothed, that
+/// reads as the steady speed it is.
+pub const LIFT_SMOOTHING: f32 = 0.1;
+
 /// The hero's hold on a block, decided by the world each step before the hero moves.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Shove {
@@ -179,6 +184,11 @@ pub struct Player {
     was_super: bool,
     /// Highest (smallest) `y` of this airtime, for the drop height on landing.
     pub peak_y: i32,
+    /// The speed of the moving ground (or wall) ridden, units/s, smoothed over about
+    /// [`LIFT_SMOOTHING`] seconds: a jump keeps it.
+    pub lift: (f32, f32),
+    /// Seconds [`Player::lift`] still counts after leaving what it rode.
+    lift_time: f32,
 }
 
 impl Player {
@@ -222,6 +232,8 @@ impl Player {
             was_down: false,
             was_super: false,
             peak_y: y,
+            lift: (0.0, 0.0),
+            lift_time: 0.0,
         }
     }
 
@@ -244,6 +256,7 @@ impl Player {
         self.wall_stick = 0.0;
         self.slipping = false;
         self.glide_armed = false;
+        self.lift = (0.0, 0.0);
         if vy < 0.0 {
             self.grounded = false;
             self.coyote = 0.0;
@@ -262,6 +275,7 @@ impl Player {
         self.peak_y = y;
         self.wall_slide = 0;
         self.wall_stick = 0.0;
+        self.lift = (0.0, 0.0);
     }
 
     /// Refill dashes, air jumps and climbing stamina, as touching the ground does.
@@ -633,6 +647,44 @@ impl Player {
     /// Whether a solid wall touches the hitbox on `side` (-1 left, 1 right).
     pub fn wall(&self, level: &dyn Terrain, side: i32) -> bool {
         side != 0 && level.solid(self.rect().shifted(side, 0))
+    }
+
+    /// What the body rides on: the row under its feet while standing, the column beside it
+    /// while holding on to a wall, or nothing.
+    pub fn riding(&self) -> Option<Rect> {
+        let r = self.rect();
+        if self.grounded {
+            Some(Rect {
+                y: r.bottom(),
+                h: 1,
+                ..r
+            })
+        } else if self.mode == Mode::Climb {
+            let x = if self.facing > 0 { r.right() } else { r.x - 1 };
+            Some(Rect { x, w: 1, ..r })
+        } else {
+            None
+        }
+    }
+
+    /// Carried `dx, dy` units in a step of `dt` by the moving ground (or moving wall) it
+    /// rides, or `None` when it rides nothing. Moved through the same unit-by-unit
+    /// collision, testing only the edge it moves toward, so the ground it rides (now
+    /// overlapping the feet when rising) doesn't hold it back. Its speed becomes
+    /// [`Player::lift`], which a jump keeps for [`Tuning::coyote_time`] after leaving.
+    pub fn ride(&mut self, level: &dyn Terrain, carry: Option<(f32, f32)>, t: &Tuning, dt: f32) {
+        let Some((dx, dy)) = carry else {
+            self.lift_time = (self.lift_time - dt).max(0.0);
+            if self.lift_time <= 0.0 {
+                self.lift = (0.0, 0.0);
+            }
+            return;
+        };
+        let a = 1.0 - (-dt / LIFT_SMOOTHING).exp();
+        self.lift.0 += (dx / dt - self.lift.0) * a;
+        self.lift.1 += (dy / dt - self.lift.1) * a;
+        self.lift_time = t.coyote_time;
+        self.carry(level, dx, dy);
     }
 
     /// Forget any jump in progress: no sustain, no cut.

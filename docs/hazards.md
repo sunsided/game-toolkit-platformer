@@ -12,6 +12,7 @@ character's `hitbox()` against your things, then act through the facade.
 | A checkpoint | the hitbox overlaps it | `set_spawn(x, y)` (hitbox top-left; `standing_at(x, floor_y)` works it out from the feet) |
 | A pickup | the hitbox overlaps it | remove it; `refill()` for dashes, air jumps and stamina |
 | A door, a portal | the hitbox overlaps it and a custom button was pressed | `teleport(x, y)` |
+| A crushing platform | `Event::Squished` (something solid moved into the character) | `respawn()` |
 | A pit | `Terrain::fell_out` says so | nothing: the character respawns by itself, or with `respawn(false)` on the builder you get `Event::FellOut` and decide |
 
 On a `Level`, mark these with tiles of your own: `Level::parse_with` reads

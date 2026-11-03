@@ -32,6 +32,7 @@ the feel: a buffered jump is checked before gravity, the landing after moving.
 | Double jump | air jumps, refilled on landing; falling just above ground, a press waits for the landing instead of spending one | `air_jumps`, `double_*`, `land_jump_lookahead` |
 | Drop-through | down + jump on a one-way platform | `drop_through_time` |
 | Corner correction | a head clipping a ceiling corner is nudged past it | `corner_correction` |
+| Moving ground | after the terrain's update, standing on (or holding) something that moved carries the body along (`Terrain::carry`), stopping at walls and ceilings; a jump off keeps its smoothed speed for coyote time; a body left inside something solid reports `Squished` | `lift_boost` |
 | Land-and-roll | a drop of `roll_drop`+ px while moving rolls; the roll keeps speed and cancels into a jump that keeps it too | `roll_*` |
 | Hard landing | a drop of `hard_land_drop`+ px standing still costs control | `hard_land_*` |
 | Queued jump vs. landing | a jump pressed before touching down wins over roll and hard landing | |

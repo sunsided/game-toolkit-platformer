@@ -124,7 +124,14 @@ impl World {
             self.player.dashes = self.tuning.dashes;
             self.events.push(Event::Recharged { crystal: true });
         }
+        let rides = self.player.riding();
         terrain.update(DT, body);
+        let carry = rides.map(|r| terrain.carry(r));
+        self.player.ride(&*terrain, carry, &self.tuning, DT);
+        let body = self.player.rect();
+        if terrain.solid(body) {
+            self.events.push(Event::Squished);
+        }
         if terrain.fell_out(body) {
             self.events.push(Event::FellOut);
             if self.respawn {

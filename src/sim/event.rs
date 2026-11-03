@@ -109,6 +109,10 @@ pub enum Event {
     },
     /// The character fell out of the world (the terrain said so).
     FellOut,
+    /// Something solid moved into the character (moving ground carried it into a
+    /// ceiling, a moving solid hit it): it's stuck inside. Reported every step it stays
+    /// so; usually a respawn.
+    Squished,
     /// It was put back at its spawn point (after falling out, unless respawning is off).
     Respawned,
 }
