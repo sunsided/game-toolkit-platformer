@@ -1,43 +1,122 @@
-//! [`read_intent`]: keyboard and gamepad to an [`Intent`]; [`read_keys`]: the clock and
-//! debug keys.
+//! [`read_intent`]: keyboard and gamepad to an [`Intent`] through a [`Scheme`];
+//! [`read_keys`]: the clock and debug keys.
 //!
-//! The defaults follow Hollow Knight's: dash on the right trigger (keyboard C), the dive
-//! is down + cast (B, or quick cast on RB; keyboard down + A), as Desolate Dive is. Grab,
-//! which Hollow Knight doesn't have, takes the super-dash slot (LT, also LB; keyboard S):
-//! it holds walls and blocks.
+//! Each feel preset brings its game's control scheme ([`Scheme::of`]); F2 switches both.
+//! Movement is always the arrows, the left stick and the d-pad.
 //!
-//! | Action | Keyboard | Gamepad (Xbox names) |
-//! |---|---|---|
-//! | move, aim, climb, look | arrows | left stick, d-pad |
-//! | jump | Z (also Space) | A |
-//! | dash | C | RT |
-//! | grab (hold) | S | LT, LB |
-//! | dive | down + A | down + B, down + RB |
+//! | Action | Hollow Knight (hybrid too) | Celeste | Super Meat Boy |
+//! |---|---|---|---|
+//! | jump | Z, Space / A | C, Space / A, Y | Space, Z / A |
+//! | dash | C / RT | X / X, B | - |
+//! | grab (hold) | S / LT, LB | Z / RT, LT, RB, LB | - |
+//! | dive | down + A / down + B, down + RB | - | - |
+//!
+//! Hollow Knight has no grab, so it takes the super-dash slot; its dive is down + cast, as
+//! Desolate Dive is. Super Meat Boy's run button is not modeled: its preset always runs.
 
 use game_toolkit::prelude::*;
 
 use crate::session::Keys;
-use crate::sim::Intent;
+use crate::sim::{Intent, Preset};
 
 /// Stick values below this are ignored.
 const DEADZONE: f32 = 0.25;
 
-/// Read this frame's intent from the keyboard and the first gamepad.
-pub fn read_intent(input: &Input) -> Intent {
-    let jump = [Key::KeyZ, Key::Space];
+/// Which keys and buttons do what. An action with no keys and no buttons can't be done.
+#[derive(Clone, Copy, Debug)]
+pub struct Scheme {
+    /// Jump keys.
+    pub jump: &'static [Key],
+    /// Jump buttons.
+    pub jump_pad: &'static [Button],
+    /// Dash keys.
+    pub dash: &'static [Key],
+    /// Dash buttons.
+    pub dash_pad: &'static [Button],
+    /// Grab keys (held).
+    pub grab: &'static [Key],
+    /// Grab buttons (held).
+    pub grab_pad: &'static [Button],
+    /// Cast keys: with down held, a dive.
+    pub cast: &'static [Key],
+    /// Cast buttons.
+    pub cast_pad: &'static [Button],
+}
+
+// gilrs names: RightTrigger2 / LeftTrigger2 are the triggers, RightTrigger / LeftTrigger
+// the bumpers; South, East, West, North are A, B, X, Y.
+
+/// Hollow Knight's defaults, grab in the super-dash slot. Also the hybrid's.
+const HOLLOW_KNIGHT: Scheme = Scheme {
+    jump: &[Key::KeyZ, Key::Space],
+    jump_pad: &[Button::South],
+    dash: &[Key::KeyC],
+    dash_pad: &[Button::RightTrigger2],
+    grab: &[Key::KeyS],
+    grab_pad: &[Button::LeftTrigger2, Button::LeftTrigger],
+    cast: &[Key::KeyA],
+    cast_pad: &[Button::East, Button::RightTrigger],
+};
+
+/// Celeste's defaults.
+const CELESTE: Scheme = Scheme {
+    jump: &[Key::KeyC, Key::Space],
+    jump_pad: &[Button::South, Button::North],
+    dash: &[Key::KeyX],
+    dash_pad: &[Button::West, Button::East],
+    grab: &[Key::KeyZ],
+    grab_pad: &[
+        Button::RightTrigger2,
+        Button::LeftTrigger2,
+        Button::RightTrigger,
+        Button::LeftTrigger,
+    ],
+    cast: &[],
+    cast_pad: &[],
+};
+
+/// Super Meat Boy: it only jumps.
+const MEAT_BOY: Scheme = Scheme {
+    jump: &[Key::Space, Key::KeyZ],
+    jump_pad: &[Button::South],
+    dash: &[],
+    dash_pad: &[],
+    grab: &[],
+    grab_pad: &[],
+    cast: &[],
+    cast_pad: &[],
+};
+
+impl Scheme {
+    /// The control scheme that goes with a feel preset (`None`: Hollow Knight's).
+    pub fn of(preset: Option<Preset>) -> Self {
+        match preset {
+            Some(Preset::Celeste) => CELESTE,
+            Some(Preset::MeatBoy) => MEAT_BOY,
+            Some(Preset::Hybrid | Preset::HollowKnight) | None => HOLLOW_KNIGHT,
+        }
+    }
+}
+
+/// Read this frame's intent from the keyboard and the first gamepad, through `scheme`.
+pub fn read_intent(input: &Input, scheme: &Scheme) -> Intent {
+    let pressed = |ks: &[Key]| ks.iter().any(|&k| input.key_pressed(k));
+    let held = |ks: &[Key]| ks.iter().any(|&k| input.key_held(k));
     let axis =
         |neg: Key, pos: Key| (input.key_held(pos) as i32 - input.key_held(neg) as i32) as f32;
     let mut i = Intent {
         move_x: axis(Key::ArrowLeft, Key::ArrowRight),
         move_y: axis(Key::ArrowUp, Key::ArrowDown),
-        jump_pressed: jump.iter().any(|&k| input.key_pressed(k)),
-        jump_held: jump.iter().any(|&k| input.key_held(k)),
-        dash_pressed: input.key_pressed(Key::KeyC),
-        grab: input.key_held(Key::KeyS),
+        jump_pressed: pressed(scheme.jump),
+        jump_held: held(scheme.jump),
+        dash_pressed: pressed(scheme.dash),
+        grab: held(scheme.grab),
         dive_pressed: false,
     };
-    let mut cast = input.key_pressed(Key::KeyA);
+    let mut cast = pressed(scheme.cast);
     if let Some(g) = input.first_gamepad() {
+        let pressed = |bs: &[Button]| bs.iter().any(|&b| g.button_pressed(b));
+        let held = |bs: &[Button]| bs.iter().any(|&b| g.button_held(b));
         let dz = |v: f32| if v.abs() < DEADZONE { 0.0 } else { v };
         let dpad = |neg, pos| (g.button_held(pos) as i32 - g.button_held(neg) as i32) as f32;
         let sx = dz(g.axis(Axis::LeftStickX)) + dpad(Button::DPadLeft, Button::DPadRight);
@@ -49,13 +128,11 @@ pub fn read_intent(input: &Input) -> Intent {
         if sy != 0.0 {
             i.move_y = sy.clamp(-1.0, 1.0);
         }
-        // gilrs: RightTrigger2 / LeftTrigger2 are the triggers, RightTrigger / LeftTrigger
-        // the bumpers.
-        i.jump_pressed |= g.button_pressed(Button::South);
-        i.jump_held |= g.button_held(Button::South);
-        i.dash_pressed |= g.button_pressed(Button::RightTrigger2);
-        i.grab |= g.button_held(Button::LeftTrigger2) || g.button_held(Button::LeftTrigger);
-        cast |= g.button_pressed(Button::East) || g.button_pressed(Button::RightTrigger);
+        i.jump_pressed |= pressed(scheme.jump_pad);
+        i.jump_held |= held(scheme.jump_pad);
+        i.dash_pressed |= pressed(scheme.dash_pad);
+        i.grab |= held(scheme.grab_pad);
+        cast |= pressed(scheme.cast_pad);
     }
     i.dive_pressed = cast && i.down();
     i

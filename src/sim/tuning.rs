@@ -58,6 +58,8 @@ impl Preset {
                 roll_drop: never,
                 hard_land_drop: never,
                 wall_stick_time: 0.0,
+                // Only the ground (and crystals) give the dash back.
+                wall_refills_dashes: false,
                 ..base
             },
             Preset::HollowKnight => Tuning {
@@ -226,6 +228,10 @@ pub struct Tuning {
     pub wall_climb_lock: f32,
     /// How much stick up or down tilts a wall jump's upward speed (0.15: +-15 %).
     pub wall_jump_aim: f32,
+    /// Touching a wall (sliding or holding on) gives the air jumps back.
+    pub wall_refills_air_jumps: bool,
+    /// Touching a wall gives the dashes back too.
+    pub wall_refills_dashes: bool,
     /// Sliding down a wall, pressing away keeps the hero stuck to it this long, so
     /// "away + jump" becomes a wall jump instead of a fall.
     pub wall_stick_time: f32,
@@ -239,6 +245,10 @@ pub struct Tuning {
     pub push_speed: f32,
     /// Walking speed pulling a block.
     pub pull_speed: f32,
+    /// Seconds of straining before a block budges (static friction: weight).
+    pub push_breakaway: f32,
+    /// Seconds from budging to full push or pull speed.
+    pub push_ramp: f32,
 
     /// Presentation: air jumps flap wings (Hollow Knight's Monarch Wings) instead of a
     /// flip. Read by the hero's animation driver, not by the movement.
@@ -327,6 +337,8 @@ impl Default for Tuning {
             wall_climb_speed: 70.0,
             wall_climb_lock: 0.07,
             wall_jump_aim: 0.15,
+            wall_refills_air_jumps: true,
+            wall_refills_dashes: true,
             wall_stick_time: 0.1,
 
             dive: true,
@@ -334,6 +346,8 @@ impl Default for Tuning {
             push: true,
             push_speed: 40.0,
             pull_speed: 30.0,
+            push_breakaway: 0.25,
+            push_ramp: 0.3,
 
             wings: false,
 

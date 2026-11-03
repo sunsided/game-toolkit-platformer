@@ -5,13 +5,13 @@
 //!   (mode, speeds, resources, buffers and timers as bars).
 //! - Top right: parameters. Compact lists only the active ones (bools on, floats off zero,
 //!   pending triggers); full lists all.
-//! - Bottom left: the event log. Bottom right: preset and clock.
+//! - Bottom left: the event log. Bottom right: the preset's keys, the preset, the clock.
 
 use crate::anim::ParamKind;
 use crate::gfx::font::{self, Font};
 use crate::gfx::{H, Raster, Rgb, W, palette as pal};
 use crate::session::{Overlay, Session};
-use crate::sim::{Mode, player};
+use crate::sim::{Mode, Preset, player};
 
 /// Line pitch of the tiny font.
 const LINE: i32 = 6;
@@ -171,7 +171,16 @@ fn log(r: &mut dyn Raster, s: &Session, full: bool) {
     panel(r, &lines, 0, H - h, false, 0);
 }
 
-/// Bottom right: preset and clock.
+/// The keyboard legend of the preset's control scheme (mirrors `app::controls`).
+fn keys(p: Option<Preset>) -> &'static str {
+    match p {
+        Some(Preset::Celeste) => "C JUMP X DASH Z GRAB",
+        Some(Preset::MeatBoy) => "SPACE JUMP",
+        _ => "Z JUMP C DASH S GRAB DN+A DIVE",
+    }
+}
+
+/// Bottom right: the keys, the preset and the clock.
 fn status(r: &mut dyn Raster, s: &Session) {
     let preset = s.preset.map_or("custom", |p| p.name()).to_uppercase();
     let clock = if s.clock.paused {
@@ -179,6 +188,9 @@ fn status(r: &mut dyn Raster, s: &Session) {
     } else {
         format!("X{}", s.clock.speed())
     };
-    let lines = [(format!("{preset} {clock}"), pal::CYAN)];
-    panel(r, &lines, W, H - LINE - 2, true, 0);
+    let lines = [
+        (keys(s.preset).to_string(), pal::STEEL_LT),
+        (format!("{preset} {clock}"), pal::CYAN),
+    ];
+    panel(r, &lines, W, H - 2 * LINE - 2, true, 0);
 }

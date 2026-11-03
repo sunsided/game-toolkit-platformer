@@ -42,6 +42,11 @@ pub struct World {
     pub crystals: Vec<Crystal>,
     /// The pushable blocks.
     pub blocks: Vec<Block>,
+    /// Seconds the hero has been pushing or pulling the same block the same way: blocks
+    /// stick until [`Tuning::push_breakaway`], then speed up over [`Tuning::push_ramp`].
+    pub effort: f32,
+    /// What the hero shoved last step, to tell whether the effort carries on.
+    last_shove: Option<(Shove, usize)>,
     /// Steps taken so far.
     pub tick: u64,
     /// What happened in the last step.
@@ -62,6 +67,8 @@ impl World {
             tuning,
             crystals,
             blocks,
+            effort: 0.0,
+            last_shove: None,
             tick: 0,
             events: Vec::new(),
         }
@@ -72,10 +79,23 @@ impl World {
     pub fn step(&mut self, intent: &Intent) {
         self.events.clear();
         let shove = self.shove(intent);
+        let moving = matches!(shove, Some((Shove::Push { .. } | Shove::Pull { .. }, _)));
+        self.effort = if moving && shove == self.last_shove {
+            self.effort + DT
+        } else if moving {
+            DT
+        } else {
+            0.0
+        };
+        self.last_shove = shove;
+        // Static friction: nothing moves until the hero has strained long enough.
+        let t = &self.tuning;
+        let give = ((self.effort - t.push_breakaway) / t.push_ramp.max(DT)).clamp(0.0, 1.0);
         self.player.shove = shove.map_or(Shove::None, |(s, _)| s);
+        self.player.shove_give = give;
         if let Some((Shove::Push { side }, i)) = shove {
             // The block moves first; the hero follows into the room it made.
-            let amount = side as f32 * self.tuning.push_speed * DT;
+            let amount = side as f32 * self.tuning.push_speed * give * DT;
             let hero = self.player.rect();
             self.blocks[i].shove(&self.level, i, hero, amount);
             self.sync_blocks();

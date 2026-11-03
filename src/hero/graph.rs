@@ -179,20 +179,20 @@ pub fn spec() -> GraphSpec {
                 .then("idle"),
         )
         .state(StateSpec::new("roll", once_each(&s::ROLL, 0.08)))
-        // Blocks.
+        // Blocks. A minimum rate keeps the legs working while the block won't budge.
         .state(
             StateSpec::new(
                 "push",
                 looping(&s::PUSH, 0.14).marker(0, "step").marker(2, "step"),
             )
-            .rate_by("speed", 40.0, 0.0, 1.5),
+            .rate_by("speed", 40.0, 0.35, 1.5),
         )
         .state(
             StateSpec::new(
                 "pull",
                 looping(&s::PULL, 0.16).marker(0, "step").marker(2, "step"),
             )
-            .rate_by("speed", 30.0, 0.0, 1.5),
+            .rate_by("speed", 30.0, 0.35, 1.5),
         )
         .state(StateSpec::new("box_hold", looping(&[s::BOX_HOLD], 0.1)))
         // Air.

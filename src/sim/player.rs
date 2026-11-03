@@ -147,6 +147,9 @@ pub struct Player {
     pub look_time: f32,
     /// The hold on a block this step (set by the world).
     pub shove: Shove,
+    /// How far the block has given, 0 (stuck) to 1 (sliding freely); scales push and
+    /// pull speed (set by the world).
+    pub shove_give: f32,
     /// Highest (smallest) `y` of this airtime, for the drop height on landing.
     pub peak_y: i32,
 }
@@ -186,6 +189,7 @@ impl Player {
             look: 0,
             look_time: 0.0,
             shove: Shove::None,
+            shove_give: 0.0,
             peak_y: y,
         }
     }
@@ -287,6 +291,22 @@ impl Player {
             }
         } else {
             self.coyote = tick(self.coyote);
+            self.wall_refill(t, ev);
+        }
+    }
+
+    /// On a wall (sliding down it or holding on, as of the last step), refill air jumps
+    /// and, if the tuning says so, dashes: Hollow Knight gives both back on a wall cling.
+    fn wall_refill(&mut self, t: &Tuning, ev: &mut Vec<Event>) {
+        if self.wall_slide == 0 && self.mode != Mode::Climb {
+            return;
+        }
+        if t.wall_refills_air_jumps {
+            self.air_jumps = t.air_jumps;
+        }
+        if t.wall_refills_dashes && self.dashes < t.dashes {
+            self.dashes = t.dashes;
+            ev.push(Event::Recharged { crystal: false });
         }
     }
 
@@ -360,8 +380,8 @@ impl Player {
             Mode::Normal => {
                 let top = match self.shove {
                     Shove::None => t.run_speed,
-                    Shove::Push { .. } => t.push_speed,
-                    Shove::Pull { .. } => t.pull_speed,
+                    Shove::Push { .. } => t.push_speed * self.shove_give,
+                    Shove::Pull { .. } => t.pull_speed * self.shove_give,
                     Shove::Hold { .. } => 0.0,
                 };
                 match self.shove {

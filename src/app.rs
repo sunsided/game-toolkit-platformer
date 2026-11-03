@@ -15,7 +15,7 @@ use game_toolkit::prelude::*;
 use crate::gfx::{DrawList, H, W};
 use crate::render;
 use crate::session::Session;
-use controls::{read_intent, read_keys};
+use controls::{Scheme, read_intent, read_keys};
 use screenshots::Screenshots;
 use viewport::Viewport;
 
@@ -101,7 +101,8 @@ impl Game for App {
         if ctx.input.key_pressed(Key::Escape) {
             ctx.quit();
         }
-        let intent = read_intent(&ctx.input);
+        let scheme = Scheme::of(self.session.preset);
+        let intent = read_intent(&ctx.input, &scheme);
         self.session.update(dt, intent, &read_keys(&ctx.input));
     }
 

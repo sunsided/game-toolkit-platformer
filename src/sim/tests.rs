@@ -964,7 +964,7 @@ fn grabbing_a_block_holds_it_and_walking_away_pulls_it() {
     assert_eq!(w.player.shove, Shove::Pull { side: 1 });
     assert_eq!(w.player.facing, 1, "still facing the block");
     assert!(
-        w.blocks[0].x < start - 20,
+        w.blocks[0].x < start - 12,
         "pulled from {start} to {}",
         w.blocks[0].x
     );
@@ -1079,4 +1079,146 @@ fn the_stick_aims_wall_jumps() {
         kick(0.0, -1.0).1 < kick(0.0, 1.0).1,
         "up jumps higher than down"
     );
+}
+
+#[test]
+fn a_wall_gives_the_air_jump_back() {
+    // From the floor left of a wall: jump, spend the air jump, slide down the wall, jump
+    // off it, and air-jump again without landing.
+    let mut w = World::new(
+        room(&(1..15).map(|r| (r, 10, "#")).collect::<Vec<_>>()),
+        Tuning::default(),
+    );
+    w.player.x = 7 * TILE;
+    run(&mut w, Intent::default(), 3);
+    let right = Intent {
+        move_x: 1.0,
+        jump_held: true,
+        ..Intent::default()
+    };
+    let mut ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            ..right
+        },
+        1,
+    );
+    ev.extend(run(&mut w, right, 10));
+    ev.extend(run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            ..right
+        },
+        1,
+    ));
+    let kinds: Vec<_> = jumps(&ev).into_iter().map(|(k, _)| k).collect();
+    assert_eq!(kinds, [JumpKind::Ground, JumpKind::Double]);
+    assert_eq!(w.player.air_jumps, 0);
+    // Into the wall until the slide starts, still in the air.
+    for _ in 0..60 {
+        if w.player.wall_slide != 0 {
+            break;
+        }
+        w.step(&Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        });
+    }
+    w.step(&Intent {
+        move_x: 1.0,
+        ..Intent::default()
+    });
+    assert!(!w.player.grounded, "still in the air");
+    assert_eq!(w.player.wall_slide, 1);
+    assert_eq!(w.player.air_jumps, 1, "the wall refilled it");
+    let left = Intent {
+        move_x: -1.0,
+        jump_held: true,
+        ..Intent::default()
+    };
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            ..left
+        },
+        1,
+    );
+    assert_eq!(jumps(&ev), [(JumpKind::Wall, false)]);
+    run(&mut w, left, 15);
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            ..left
+        },
+        1,
+    );
+    assert_eq!(jumps(&ev), [(JumpKind::Double, false)]);
+}
+
+#[test]
+fn celeste_walls_do_not_give_the_dash_back() {
+    let mut w = at_wall(1..15, 3 * TILE, Preset::Celeste.tuning());
+    w.player.dashes = 0;
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        40,
+    );
+    assert_eq!(w.player.wall_slide, 1);
+    assert_eq!(w.player.dashes, 0);
+    let mut w = at_wall(1..15, 3 * TILE, Preset::HollowKnight.tuning());
+    w.player.dashes = 0;
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        40,
+    );
+    assert_eq!(w.player.dashes, 1);
+}
+
+#[test]
+fn blocks_stick_before_they_budge() {
+    let mut w = with_block();
+    // Walk up to it, until the first step of pushing.
+    while !matches!(w.player.shove, Shove::Push { .. }) {
+        w.step(&Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        });
+    }
+    let start = w.blocks[0].x;
+    let mut pushed = 0;
+    for _ in 0..24 {
+        // Under the 0.25 s breakaway: strained, not moved.
+        w.step(&Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        });
+        pushed = w.blocks[0].x - start;
+    }
+    let t = Tuning::default();
+    assert!(w.effort > 0.0 && w.effort < t.push_breakaway + 0.02);
+    assert!(pushed <= 1, "budged early: {pushed}");
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        90,
+    );
+    assert!(w.blocks[0].x - start > 15, "then it slides");
+    // Letting go resets the effort: it sticks again.
+    run(&mut w, Intent::default(), 2);
+    assert_eq!(w.effort, 0.0);
 }

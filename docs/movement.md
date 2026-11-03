@@ -36,12 +36,13 @@ the feel: a buffered jump is checked before gravity, the landing after moving.
 | Queued jump vs. landing | a jump pressed before touching down wins over roll and hard landing | |
 | Dash | 8-way (or sideways only), gravity off, hands over part of its speed; down-dashes end on the ground; refilled by the ground (after a moment) or crystals | `dash*`, `crystal_respawn` |
 | Wall slide | pressing into a wall while falling caps the fall | `wall_slide_speed` |
+| Wall refill | sliding down or holding on to a wall gives the air jumps back, and the dashes where the tuning says so (Hollow Knight; not Celeste) | `wall_refills_*` |
 | Wall stick | pressing away from the wall slid down keeps the hero on it briefly (Super Meat Boy), so away + jump is a wall jump | `wall_stick_time` |
 | Wall jump | near a wall (or climbing and pushing away). The stick aims it: toward the wall a small kick with a short lock that arcs back onto the same wall (chained, it scales the wall, as in Hollow Knight and Super Meat Boy), away the full leap, neutral in between; up and down tilt it ±`wall_jump_aim` | `wall_jump_*`, `wall_climb_*` |
 | Climb | grab a wall: climb up/down at a stamina cost, hop over the top; climb jump straight up | `grab`, `climb_*`, `stamina` |
 | Grip | holding still: a firm grip holds, a slipping one slides; a tired grip (low stamina) slips and can't climb | `slip_speed`, `tired_*` |
 | Dive | in the air: a short hang, then straight down; the impact costs a moment of control | `dive`, `dive_*` |
-| Blocks | walking into a resting block pushes it (slowly); grab facing it holds it, walking away pulls it; blocks fall, stack, and can be stood on | `push`, `push_speed`, `pull_speed` |
+| Blocks | walking into a resting block pushes it (slowly); grab facing it holds it, walking away pulls it; a block sticks until the hero has strained for `push_breakaway`, then speeds up over `push_ramp` (weight); blocks fall, stack, and can be stood on | `push`, `push_*`, `pull_speed` |
 | Look | holding up or down while standing still (no movement) | |
 
 "Diving" is the Hollow Knight downward plunge here; swimming is a different feature (see
@@ -57,7 +58,8 @@ unreachable drop (`roll_drop`, `hard_land_drop`).
 
 ## Presets
 
-`Preset::tuning()`; F2 in game cycles them.
+`Preset::tuning()`; F2 in game cycles them, together with the matching control scheme
+(`app/controls.rs`, the README lists them).
 
 | Preset | Character |
 |---|---|
