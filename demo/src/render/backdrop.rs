@@ -93,6 +93,7 @@ pub fn plain(level: &Level) -> Canvas {
                     c.fill_rect(x, y, t, 1, pal::STONE_LT);
                     c.fill_rect(x, y + 1, t, 2, pal::STONE);
                 }
+                _ => {}
             }
         }
     }
@@ -360,6 +361,7 @@ fn tiles(c: &mut Canvas, level: &Level) {
                 Tile::Empty => {}
                 Tile::Solid => rock(c, level, tx, ty, x, y, t),
                 Tile::Platform => plank(c, tx, x, y, t),
+                _ => {}
             }
         }
     }

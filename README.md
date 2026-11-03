@@ -94,7 +94,7 @@ let mut hero = Platformer::at(40, 100, Preset::Snappy);
 hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
 ```
 
-The other methods are optional: one-way platforms, dash refills, pushable boxes, falling out of the world, and a per-step `update` for anything that moves. `Level` is a ready-made `Terrain` with all of them: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `B` box, `P` spawn), `Level::from_fn` builds one from your tilemap.
+The other methods are optional: one-way platforms, dash refills, pushable boxes, falling out of the world, and a per-step `update` for anything that moves. `Level` is a ready-made `Terrain` with all of them: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `B` box, `P` spawn), `Level::from_fn` builds one from your tilemap, and `Level::parse_with` adds tiles of your own (spikes, water, goals) that the movement treats as air.
 
 ## Drawing your character
 

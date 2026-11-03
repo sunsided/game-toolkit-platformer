@@ -1,6 +1,50 @@
 //! [`Level`]: a ready-made [`Terrain`]: a grid of tiles (solid, one-way platforms), dash
 //! refills, pushable boxes and a spawn point. Parse it from ASCII rows, build it from your
 //! own tilemap with [`Level::from_fn`], or implement [`Terrain`] for your own world instead.
+//!
+//! Tiles of your own ([`Tile::Custom`]: spikes, water, checkpoints) are air to the
+//! movement; [`Level::parse_with`] reads them from characters of your choosing and
+//! [`Level::tiles_touching`] finds the ones under the character. For more (state of your
+//! own beside the level), wrap it in your own struct and implement [`Terrain`] by
+//! forwarding to it. Forward [`Terrain::update`] too, or used refills never come back and
+//! boxes stop falling:
+//!
+//! ```
+//! use game_toolkit_platformer::sim::{Level, Rect, Terrain};
+//!
+//! struct Stage {
+//!     level: Level,
+//!     doors_open: bool,
+//! }
+//!
+//! impl Terrain for Stage {
+//!     fn solid(&self, r: Rect) -> bool {
+//!         self.level.solid(r)
+//!     }
+//!     fn solid_except(&self, r: Rect, skip: Option<usize>) -> bool {
+//!         self.level.solid_except(r, skip)
+//!     }
+//!     fn platform(&self, r: Rect) -> bool {
+//!         self.level.platform(r)
+//!     }
+//!     fn refill(&mut self, r: Rect) -> bool {
+//!         self.level.refill(r)
+//!     }
+//!     fn pushable(&self, r: Rect) -> Option<usize> {
+//!         self.level.pushable(r)
+//!     }
+//!     fn shove(&mut self, id: usize, dx: f32, hero: Rect) -> i32 {
+//!         self.level.shove(id, dx, hero)
+//!     }
+//!     fn fell_out(&self, r: Rect) -> bool {
+//!         self.level.fell_out(r)
+//!     }
+//!     fn update(&mut self, dt: f32, hero: Rect) {
+//!         self.level.update(dt, hero);
+//!     }
+//! }
+//! # let _ = Stage { level: Level::demo(), doors_open: false }.doors_open;
+//! ```
 
 use super::{Block, Crystal, Rect, Terrain};
 
@@ -54,8 +98,9 @@ pub const DEMO: [&str; 27] = [
     "##########################################...###",
 ];
 
-/// What fills one tile.
+/// What fills one tile. New kinds may come, so matches need a `_` arm.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Tile {
     /// Air.
     Empty,
@@ -63,6 +108,10 @@ pub enum Tile {
     Solid,
     /// Blocks only from above, and only while not dropping through.
     Platform,
+    /// Your game's own tile, by a number of your choosing: spikes, water, a checkpoint, the
+    /// goal. The movement treats it as air; find the ones the character touches with
+    /// [`Level::tiles_touching`].
+    Custom(u8),
 }
 
 /// Tiles on a grid, with refills and boxes. Outside the grid, the sides and the top are
@@ -90,26 +139,50 @@ impl Level {
     /// dash refill, `B` box, `P` spawn, anything else air. Panics on ragged rows: levels
     /// written in code should fail loudly on a typo.
     pub fn parse(rows: &[&str]) -> Self {
+        Self::parse_with(rows, |_| None)
+    }
+
+    /// Like [`Level::parse`], with characters of your own: `tile(c)` is asked first for
+    /// each one, and a `Some` wins over the built-in meaning (so `Some(Tile::Custom(0))`
+    /// for `^` makes spikes, and `Some(Tile::Empty)` for `*` leaves the refills out).
+    ///
+    /// ```
+    /// use game_toolkit_platformer::sim::{Level, Rect, Tile};
+    ///
+    /// const SPIKES: u8 = 0;
+    /// let level = Level::parse_with(&["....", ".^^.", "####"], |c| match c {
+    ///     '^' => Some(Tile::Custom(SPIKES)),
+    ///     _ => None,
+    /// });
+    /// let feet = Rect { x: 10, y: 4, w: 6, h: 12 };
+    /// assert!(level.tiles_touching(feet).any(|(_, _, t)| t == Tile::Custom(SPIKES)));
+    /// ```
+    pub fn parse_with(rows: &[&str], tile: impl Fn(char) -> Option<Tile>) -> Self {
         let h = rows.len() as i32;
-        let w = rows.first().map_or(0, |r| r.len()) as i32;
-        let mut level = Self::from_fn(w, h, |x, y| match rows[y as usize].as_bytes()[x as usize] {
-            b'#' => Tile::Solid,
-            b'=' => Tile::Platform,
-            _ => Tile::Empty,
-        });
+        let w = rows.first().map_or(0, |r| r.chars().count()) as i32;
         for (y, row) in rows.iter().enumerate() {
-            assert_eq!(
-                row.len() as i32,
-                w,
-                "level row {y} is {} wide, not {w}",
-                row.len()
-            );
-            for (x, c) in row.bytes().enumerate() {
+            let n = row.chars().count() as i32;
+            assert_eq!(n, w, "level row {y} is {n} wide, not {w}");
+        }
+        let grid: Vec<Vec<char>> = rows.iter().map(|r| r.chars().collect()).collect();
+        let mut level = Self::from_fn(w, h, |x, y| {
+            let c = grid[y as usize][x as usize];
+            tile(c).unwrap_or(match c {
+                '#' => Tile::Solid,
+                '=' => Tile::Platform,
+                _ => Tile::Empty,
+            })
+        });
+        for (y, row) in grid.iter().enumerate() {
+            for (x, &c) in row.iter().enumerate() {
+                if tile(c).is_some() {
+                    continue;
+                }
                 let at = (x as i32, y as i32);
                 match c {
-                    b'P' => level.spawn = at,
-                    b'*' => level.crystals.push(Crystal::at(at)),
-                    b'B' => level.blocks.push(Block::at(at)),
+                    'P' => level.spawn = at,
+                    '*' => level.crystals.push(Crystal::at(at)),
+                    'B' => level.blocks.push(Block::at(at)),
                     _ => {}
                 }
             }
@@ -161,6 +234,17 @@ impl Level {
         if (0..self.w).contains(&tx) && (0..self.h).contains(&ty) {
             self.tiles[(ty * self.w + tx) as usize] = tile;
         }
+    }
+
+    /// The tiles `r` overlaps, as `(tx, ty, tile)`, row by row: what the character's
+    /// hitbox touches (spikes, water, the goal), with `Tile::Custom` tiles of your own.
+    pub fn tiles_touching(&self, r: Rect) -> impl Iterator<Item = (i32, i32, Tile)> + '_ {
+        let (tx0, ty0) = (r.x.div_euclid(TILE), r.y.div_euclid(TILE));
+        let (tx1, ty1) = (
+            (r.right() - 1).div_euclid(TILE),
+            (r.bottom() - 1).div_euclid(TILE),
+        );
+        (ty0..=ty1).flat_map(move |ty| (tx0..=tx1).map(move |tx| (tx, ty, self.tile(tx, ty))))
     }
 
     /// Whether tile `tx, ty` is solid.
@@ -293,6 +377,29 @@ mod tests {
             w: 4,
             h: 4
         }));
+    }
+
+    #[test]
+    fn custom_tiles_are_air_and_can_be_found() {
+        let l = Level::parse_with(&["~~P.", "~##*"], |c| (c == '~').then_some(Tile::Custom(7)));
+        assert_eq!(l.tile(0, 0), Tile::Custom(7));
+        assert_eq!(l.spawn, (2, 0), "built-in characters still work");
+        assert_eq!(l.crystals.len(), 1);
+        let r = Rect {
+            x: 0,
+            y: 0,
+            w: 8,
+            h: 16,
+        };
+        assert!(!l.overlaps(r), "custom tiles are air");
+        let found: Vec<_> = l.tiles_touching(r).collect();
+        assert_eq!(
+            found,
+            vec![(0, 0, Tile::Custom(7)), (0, 1, Tile::Custom(7))]
+        );
+        // A character can be overridden too.
+        let l = Level::parse_with(&["*"], |c| (c == '*').then_some(Tile::Empty));
+        assert!(l.crystals.is_empty());
     }
 
     #[test]

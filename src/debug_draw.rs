@@ -28,6 +28,15 @@ impl Level {
                             Color::rgb8(156, 112, 66),
                         );
                     }
+                    Tile::Custom(k) => {
+                        // A small square, its shade by number, so kinds tell apart.
+                        let shade = 120u8.wrapping_add(k.wrapping_mul(53));
+                        p.rect(
+                            at(x + 2.0, y + 2.0),
+                            [(t - 4.0) * scale, (t - 4.0) * scale],
+                            Color::rgb8(200, shade, 120),
+                        );
+                    }
                 }
             }
         }
