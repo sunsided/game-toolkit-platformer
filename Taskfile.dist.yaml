@@ -1,0 +1,56 @@
+# https://taskfile.dev
+version: '3'
+
+vars:
+  PROFILE: '{{ .PROFILE | default "debug" }}'
+  PROFILE_FLAG: '{{ if eq .PROFILE "release" }}--release{{ end }}'
+
+tasks:
+  default:
+    cmds:
+      - task --list --sort=none
+    silent: true
+
+  run:
+    desc: Run the game on the demo level (PROFILE=debug|release)
+    cmds:
+      - cargo run {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
+
+  screenshot:
+    desc: "Save what the window shows after AT seconds (default 2) to OUT, then quit"
+    vars:
+      OUT: '{{ .OUT | default "screenshots/window.png" }}'
+      AT: '{{ .AT | default "2" }}'
+    cmds:
+      - cargo run {{.PROFILE_FLAG}} -- --screenshot {{.OUT}} --at {{.AT}}
+
+  snapshot:
+    desc: "Filmstrips of every scripted move, headless, into snapshots/ (or only some: task snapshot -- roll climb)"
+    cmds:
+      - cargo run --release --example snapshot -- snapshots {{.CLI_ARGS}}
+
+  build:
+    desc: Build (PROFILE=debug|release)
+    cmds:
+      - cargo build {{.PROFILE_FLAG}} {{.CLI_ARGS}}
+
+  test:
+    desc: Run tests (movement rules, determinism, animation controller, hero graph)
+    cmds:
+      - cargo test {{.CLI_ARGS}}
+
+  fmt:
+    desc: Format sources
+    cmds:
+      - cargo fmt --all
+
+  lint:
+    desc: Clippy (warnings as errors, includes missing docs)
+    cmds:
+      - cargo clippy --all-targets -- -D warnings
+
+  check:
+    desc: fmt --check and clippy -D warnings (run before calling it done)
+    cmds:
+      - cargo fmt --all --check
+      - cargo clippy --all-targets -- -D warnings

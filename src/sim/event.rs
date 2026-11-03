@@ -1,0 +1,92 @@
+//! [`Event`]: what happened in a step, for animation, sound and effects.
+
+/// How a jump left the ground (or the wall, or the air).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum JumpKind {
+    /// From standing or running on the ground.
+    Ground,
+    /// Just after walking off a ledge, within coyote time.
+    Coyote,
+    /// Out of a landing roll, keeping the roll's speed.
+    Roll,
+    /// Off a wall, away from it.
+    Wall,
+    /// Straight up a wall while holding on, at a stamina cost.
+    Climb,
+    /// In the air, spending an air jump.
+    Double,
+}
+
+/// Something that happened in one step.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Event {
+    /// The hero jumped. `buffered`: the press came before the jump was possible and waited
+    /// in the jump buffer.
+    Jumped {
+        /// Which kind of jump.
+        kind: JumpKind,
+        /// Whether the press was queued.
+        buffered: bool,
+    },
+    /// The hero let go of jump while rising and the jump was cut short.
+    JumpCut,
+    /// Vertical speed crossed zero going up to down in the air.
+    Apex,
+    /// The hero walked or rolled off the ground (not by jumping).
+    LeftGround,
+    /// Down + jump on a one-way platform: dropping through it.
+    DroppedThrough,
+    /// The hero touched down.
+    Landed {
+        /// Downward speed at contact, px/s.
+        impact: f32,
+        /// Pixels fallen from the highest point of the airtime.
+        drop: i32,
+    },
+    /// A landing turned into a roll.
+    RollStarted,
+    /// The roll ran out (not by jumping).
+    RollEnded,
+    /// A landing from high up without moving: a heavy landing that costs control.
+    HardLanded,
+    /// A heavy landing or a dive impact is over.
+    Recovered,
+    /// A dash started, in direction `dx, dy` (8-way, normalized, y down).
+    Dashed {
+        /// Horizontal direction.
+        dx: f32,
+        /// Vertical direction.
+        dy: f32,
+    },
+    /// The dash ran out and handed over its leftover speed.
+    DashEnded,
+    /// Dashes were refilled, on the ground or by a crystal.
+    Recharged {
+        /// By a crystal (in the air), not by the ground.
+        crystal: bool,
+    },
+    /// Grabbed a wall.
+    Grabbed,
+    /// Let go of a wall (released grab, wall ended, or out of stamina).
+    LetGo,
+    /// Climbed over the top of a wall with a small hop.
+    ClimbHop,
+    /// Stamina ran out on a wall.
+    StaminaOut,
+    /// A dive started: a short hang, then straight down.
+    DiveStarted,
+    /// A dive hit the ground.
+    DiveImpact {
+        /// Pixels fallen from the dive's start.
+        drop: i32,
+    },
+    /// The head hit a ceiling.
+    Bonked,
+    /// The head clipped a ceiling corner and was nudged past it.
+    CornerCorrected {
+        /// Pixels nudged, signed.
+        dx: i32,
+    },
+    /// The hero fell out of the level and was put back at the spawn.
+    Respawned,
+}

@@ -1,0 +1,806 @@
+//! Simulation tests: determinism and movement rules, driven by scripted intents.
+
+use super::*;
+
+/// A closed room 24 tiles wide and 16 high, the spawn on the floor at the left; `extra`
+/// rows (tile row, string) overwrite parts of it.
+fn room(extra: &[(usize, usize, &str)]) -> Level {
+    let mut rows: Vec<Vec<u8>> = (0..16)
+        .map(|y| {
+            (0..24)
+                .map(|x| {
+                    if x == 0 || x == 23 || y == 15 {
+                        b'#'
+                    } else {
+                        b'.'
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    rows[14][2] = b'P';
+    for &(y, x, s) in extra {
+        rows[y][x..x + s.len()].copy_from_slice(s.as_bytes());
+    }
+    let strs: Vec<String> = rows
+        .into_iter()
+        .map(|r| String::from_utf8(r).unwrap())
+        .collect();
+    let refs: Vec<&str> = strs.iter().map(String::as_str).collect();
+    Level::parse(&refs)
+}
+
+/// A world in `level` with default tuning.
+fn world(level: Level) -> World {
+    World::new(level, Tuning::default())
+}
+
+/// Step `n` times with `i`, collecting every event.
+fn run(w: &mut World, i: Intent, n: usize) -> Vec<Event> {
+    let mut all = Vec::new();
+    for _ in 0..n {
+        w.step(&i);
+        all.extend(w.events.iter().copied());
+    }
+    all
+}
+
+/// Press jump once (holding), then hold it for `hold` steps, then release for `rest`.
+fn jump(w: &mut World, hold: usize, rest: usize) -> Vec<Event> {
+    let press = Intent {
+        jump_pressed: true,
+        jump_held: true,
+        ..Intent::default()
+    };
+    let mut ev = run(w, press, 1);
+    ev.extend(run(
+        w,
+        Intent {
+            jump_held: true,
+            ..Intent::default()
+        },
+        hold,
+    ));
+    ev.extend(run(w, Intent::default(), rest));
+    ev
+}
+
+/// The jumps among `ev`.
+fn jumps(ev: &[Event]) -> Vec<(JumpKind, bool)> {
+    ev.iter()
+        .filter_map(|e| match *e {
+            Event::Jumped { kind, buffered } => Some((kind, buffered)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The hero's highest point (smallest y) over the events of a run, by stepping it.
+fn peak(w: &mut World, hold: usize) -> i32 {
+    let start = w.player.y;
+    let mut top = start;
+    let press = Intent {
+        jump_pressed: true,
+        jump_held: true,
+        ..Intent::default()
+    };
+    w.step(&press);
+    for k in 0..240 {
+        let held = k < hold;
+        w.step(&Intent {
+            jump_held: held,
+            ..Intent::default()
+        });
+        top = top.min(w.player.y);
+    }
+    start - top
+}
+
+#[test]
+fn a_cloned_world_plays_out_identically() {
+    let mut a = world(Level::demo());
+    let script: Vec<Intent> = (0..600)
+        .map(|k| Intent {
+            move_x: if k % 200 < 120 { 1.0 } else { -1.0 },
+            jump_pressed: k % 70 == 0,
+            jump_held: k % 70 < 30,
+            dash_pressed: k % 150 == 40,
+            move_y: if k % 150 == 40 { -1.0 } else { 0.0 },
+            ..Intent::default()
+        })
+        .collect();
+    run(&mut a, Intent::default(), 10);
+    let mut b = a.clone();
+    for i in &script {
+        a.step(i);
+        b.step(i);
+        assert_eq!(a.events, b.events);
+    }
+    assert_eq!(a.player, b.player);
+}
+
+#[test]
+fn holding_jump_goes_higher_than_tapping() {
+    let tap = peak(&mut world(room(&[])), 1);
+    let hold = peak(&mut world(room(&[])), 60);
+    assert!(hold > tap + 8, "tap {tap}, hold {hold}");
+}
+
+#[test]
+fn holding_through_the_apex_hangs_longer() {
+    /// Steps spent with |vy| under the apex threshold.
+    fn hang(hold: bool) -> usize {
+        let mut w = world(room(&[]));
+        let mut n = 0;
+        w.step(&Intent {
+            jump_pressed: true,
+            jump_held: true,
+            ..Intent::default()
+        });
+        for k in 0..240 {
+            // Both release the same early; one presses again over the apex.
+            let held = k < 24 || (hold && w.player.vy.abs() < 40.0);
+            w.step(&Intent {
+                jump_held: held,
+                ..Intent::default()
+            });
+            if !w.player.grounded && w.player.vy.abs() < 40.0 {
+                n += 1;
+            }
+        }
+        n
+    }
+    assert!(hang(true) > hang(false) + 5);
+}
+
+#[test]
+fn a_press_just_before_landing_is_queued_into_a_ground_jump() {
+    let mut w = world(room(&[]));
+    jump(&mut w, 30, 0);
+    // Fall until just above the floor, then press.
+    while !(w.player.vy > 0.0 && w.player.y + player::H >= 15 * TILE - 5) {
+        w.step(&Intent::default());
+    }
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            jump_held: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    let mut ev = ev;
+    ev.extend(run(
+        &mut w,
+        Intent {
+            jump_held: true,
+            ..Intent::default()
+        },
+        12,
+    ));
+    assert_eq!(jumps(&ev), [(JumpKind::Ground, true)], "{ev:?}");
+    assert_eq!(w.player.air_jumps, 1, "the air jump was not spent");
+}
+
+#[test]
+fn coyote_time_allows_a_late_jump_off_a_ledge() {
+    // A ledge at tile row 10 from x 1..8; walk right off it.
+    let mut w = world(room(&[(10, 1, "########")]));
+    w.player.x = 6 * TILE;
+    w.player.y = 10 * TILE - player::H;
+    run(&mut w, Intent::default(), 2);
+    let right = Intent {
+        move_x: 1.0,
+        ..Intent::default()
+    };
+    let mut ev = Vec::new();
+    while !ev.contains(&Event::LeftGround) {
+        ev.extend(run(&mut w, right, 1));
+    }
+    run(&mut w, right, 4);
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            jump_held: true,
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert_eq!(jumps(&ev), [(JumpKind::Coyote, false)]);
+}
+
+#[test]
+fn one_air_jump_until_landing() {
+    let mut w = world(room(&[]));
+    let mut ev = jump(&mut w, 20, 0);
+    ev.extend(jump(&mut w, 10, 0));
+    ev.extend(jump(&mut w, 10, 0));
+    let kinds: Vec<_> = jumps(&ev).into_iter().map(|(k, _)| k).collect();
+    assert_eq!(kinds, [JumpKind::Ground, JumpKind::Double]);
+}
+
+/// A world with the hero standing on a shelf `rows` tiles above the floor.
+fn on_shelf(rows: i32) -> World {
+    let y = 15 - rows;
+    let mut w = world(room(&[(y as usize, 1, "######")]));
+    w.player.x = 4 * TILE;
+    w.player.y = y * TILE - player::H;
+    run(&mut w, Intent::default(), 2);
+    w
+}
+
+/// Walk right off the shelf with `move_x` held after leaving it, until landed.
+fn drop_off(w: &mut World, move_x: f32, extra: Intent) -> Vec<Event> {
+    let mut ev = Vec::new();
+    while !ev.contains(&Event::LeftGround) {
+        ev.extend(run(
+            w,
+            Intent {
+                move_x: 1.0,
+                ..Intent::default()
+            },
+            1,
+        ));
+    }
+    while !ev.iter().any(|e| matches!(e, Event::Landed { .. })) {
+        ev.extend(run(w, Intent { move_x, ..extra }, 1));
+    }
+    ev.extend(run(
+        w,
+        Intent {
+            move_x,
+            ..Intent::default()
+        },
+        3,
+    ));
+    ev
+}
+
+#[test]
+fn a_high_landing_while_moving_rolls() {
+    let ev = drop_off(&mut on_shelf(8), 1.0, Intent::default());
+    assert!(ev.contains(&Event::RollStarted), "{ev:?}");
+}
+
+#[test]
+fn a_very_high_landing_standing_still_lands_hard() {
+    let mut w = on_shelf(13);
+    let ev = drop_off(&mut w, 0.0, Intent::default());
+    assert!(ev.contains(&Event::HardLanded), "{ev:?}");
+    // No control until it is over.
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            jump_held: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert!(jumps(&ev).is_empty());
+    assert!(run(&mut w, Intent::default(), 40).contains(&Event::Recovered));
+}
+
+#[test]
+fn a_queued_jump_beats_the_roll() {
+    let mut w = on_shelf(8);
+    let mut ev = Vec::new();
+    while !ev.contains(&Event::LeftGround) {
+        ev.extend(run(
+            &mut w,
+            Intent {
+                move_x: 1.0,
+                ..Intent::default()
+            },
+            1,
+        ));
+    }
+    while w.player.y + player::H < 15 * TILE - 5 {
+        run(
+            &mut w,
+            Intent {
+                move_x: 1.0,
+                ..Intent::default()
+            },
+            1,
+        );
+    }
+    let mut ev = run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            jump_pressed: true,
+            jump_held: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    ev.extend(run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            jump_held: true,
+            ..Intent::default()
+        },
+        10,
+    ));
+    assert!(!ev.contains(&Event::RollStarted), "{ev:?}");
+    assert_eq!(jumps(&ev), [(JumpKind::Ground, true)]);
+}
+
+#[test]
+fn rolls_cancel_into_jumps_that_keep_the_speed() {
+    let mut w = on_shelf(8);
+    drop_off(&mut w, 1.0, Intent::default());
+    assert!(matches!(w.player.mode, Mode::Roll { .. }));
+    // Pressed too early in the roll: it waits in the buffer until the roll can be cut.
+    let mut ev = run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            jump_pressed: true,
+            jump_held: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    ev.extend(run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            jump_held: true,
+            ..Intent::default()
+        },
+        8,
+    ));
+    assert_eq!(jumps(&ev), [(JumpKind::Roll, true)]);
+    assert!(
+        w.player.vx > Tuning::default().run_speed + 30.0,
+        "{}",
+        w.player.vx
+    );
+}
+
+#[test]
+fn down_and_jump_drops_through_a_platform() {
+    let mut w = world(room(&[(11, 1, "========")]));
+    w.player.y = 11 * TILE - player::H;
+    run(&mut w, Intent::default(), 2);
+    assert!(w.player.grounded, "platforms hold");
+    let ev = run(
+        &mut w,
+        Intent {
+            move_y: 1.0,
+            jump_pressed: true,
+            jump_held: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert!(ev.contains(&Event::DroppedThrough));
+    run(&mut w, Intent::default(), 60);
+    assert!(w.player.grounded);
+    assert_eq!(w.player.y, 15 * TILE - player::H, "on the floor below");
+}
+
+#[test]
+fn jumping_up_through_a_platform_lands_on_it() {
+    let mut w = world(room(&[(12, 1, "========")]));
+    jump(&mut w, 30, 80);
+    assert!(w.player.grounded);
+    assert_eq!(w.player.y, 12 * TILE - player::H);
+}
+
+#[test]
+fn dashes_go_eight_ways_and_recharge_on_the_ground() {
+    let mut w = world(room(&[]));
+    jump(&mut w, 10, 0);
+    let ev = run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            move_y: -1.0,
+            dash_pressed: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert!(
+        ev.iter()
+            .any(|e| matches!(e, Event::Dashed { dx, dy } if *dx > 0.5 && *dy < -0.5))
+    );
+    assert!(w.player.vx > 150.0 && w.player.vy < -150.0);
+    assert_eq!(w.player.dashes, 0);
+    // No second dash in the air.
+    let ev = run(
+        &mut w,
+        Intent {
+            dash_pressed: true,
+            ..Intent::default()
+        },
+        30,
+    );
+    assert!(!ev.iter().any(|e| matches!(e, Event::Dashed { .. })));
+    let ev = run(&mut w, Intent::default(), 120);
+    assert!(ev.contains(&Event::Recharged { crystal: false }));
+    assert_eq!(w.player.dashes, 1);
+}
+
+#[test]
+fn a_downward_dash_ends_on_the_ground() {
+    let mut w = world(room(&[]));
+    jump(&mut w, 30, 0);
+    let mut ev = run(
+        &mut w,
+        Intent {
+            move_y: 1.0,
+            dash_pressed: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    ev.extend(run(
+        &mut w,
+        Intent {
+            move_y: 1.0,
+            ..Intent::default()
+        },
+        30,
+    ));
+    assert!(ev.iter().any(|e| matches!(e, Event::Landed { .. })));
+    assert_eq!(w.player.mode, Mode::Normal);
+}
+
+#[test]
+fn crystals_recharge_in_the_air_and_come_back() {
+    let mut w = world(room(&[(10, 2, "*")]));
+    jump(&mut w, 2, 0);
+    run(
+        &mut w,
+        Intent {
+            move_y: -1.0,
+            dash_pressed: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    let ev = run(&mut w, Intent::default(), 30);
+    assert!(ev.contains(&Event::Recharged { crystal: true }), "{ev:?}");
+    assert!(!w.crystals[0].ready());
+    run(&mut w, Intent::default(), 400);
+    assert!(w.crystals[0].ready());
+}
+
+#[test]
+fn climbing_costs_stamina_and_wall_jumps_push_away() {
+    // A wall column at x 10, from row 4 down to the floor.
+    let mut w = world(room(&(4..15).map(|y| (y, 10, "#")).collect::<Vec<_>>()));
+    w.player.x = 10 * TILE - player::W;
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        2,
+    );
+    let grab = Intent {
+        grab: true,
+        ..Intent::default()
+    };
+    jump(&mut w, 10, 0);
+    let ev = run(&mut w, grab, 2);
+    assert!(ev.contains(&Event::Grabbed), "{ev:?}");
+    let full = w.player.stamina;
+    run(
+        &mut w,
+        Intent {
+            move_y: -1.0,
+            ..grab
+        },
+        30,
+    );
+    assert!(w.player.stamina < full);
+    assert_eq!(w.player.mode, Mode::Climb);
+    let ev = run(
+        &mut w,
+        Intent {
+            move_x: -1.0,
+            jump_pressed: true,
+            jump_held: true,
+            ..grab
+        },
+        1,
+    );
+    assert_eq!(jumps(&ev), [(JumpKind::Wall, false)]);
+    assert!(w.player.vx < -100.0);
+    assert_eq!(w.player.facing, -1);
+}
+
+#[test]
+fn climbing_over_the_top_hops() {
+    let mut w = world(room(&(11..15).map(|y| (y, 10, "#")).collect::<Vec<_>>()));
+    w.player.x = 10 * TILE - player::W;
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        2,
+    );
+    jump(&mut w, 4, 0);
+    let ev = run(
+        &mut w,
+        Intent {
+            grab: true,
+            move_y: -1.0,
+            ..Intent::default()
+        },
+        120,
+    );
+    assert!(ev.contains(&Event::ClimbHop), "{ev:?}");
+}
+
+#[test]
+fn running_out_of_stamina_lets_go() {
+    // A grip that never tires into a slip, so it holds until stamina is gone.
+    let firm = Tuning {
+        tired_stamina: 0.0,
+        ..Tuning::default()
+    };
+    let mut w = World::new(
+        room(&(1..15).map(|y| (y, 10, "#")).collect::<Vec<_>>()),
+        firm,
+    );
+    w.player.x = 10 * TILE - player::W;
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        2,
+    );
+    jump(&mut w, 4, 0);
+    let ev = run(
+        &mut w,
+        Intent {
+            grab: true,
+            ..Intent::default()
+        },
+        1500,
+    );
+    assert!(ev.contains(&Event::StaminaOut));
+}
+
+#[test]
+fn sliding_down_a_wall_caps_the_fall() {
+    let mut w = world(room(&(1..13).map(|y| (y, 10, "#")).collect::<Vec<_>>()));
+    w.player.x = 10 * TILE - player::W;
+    w.player.y = 2 * TILE;
+    w.player.grounded = false;
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        60,
+    );
+    assert_eq!(w.player.wall_slide, 1);
+    assert!(w.player.vy <= Tuning::default().wall_slide_speed + 1.0);
+}
+
+#[test]
+fn dives_plunge_and_impact() {
+    let mut w = world(room(&[]));
+    jump(&mut w, 30, 0);
+    let ev = run(
+        &mut w,
+        Intent {
+            dive_pressed: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert!(ev.contains(&Event::DiveStarted));
+    let ev = run(&mut w, Intent::default(), 60);
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::DiveImpact { .. })),
+        "{ev:?}"
+    );
+    assert!(ev.contains(&Event::Recovered));
+}
+
+#[test]
+fn the_head_slips_past_ceiling_corners() {
+    // A ceiling over tiles 1..2 at row 12: the hero at x 22..28 clips its corner by 2 px.
+    let mut w = world(room(&[(12, 1, "##")]));
+    w.player.x = 3 * TILE - 2;
+    let ev = jump(&mut w, 20, 0);
+    assert!(
+        ev.iter()
+            .any(|e| matches!(e, Event::CornerCorrected { .. })),
+        "{ev:?}"
+    );
+}
+
+/// A world in a room with a wall column at tile x 10 over `rows`, the hero against it
+/// and in the air at `y` px, with `tuning`.
+fn at_wall(rows: std::ops::Range<usize>, y: i32, tuning: Tuning) -> World {
+    let mut w = World::new(
+        room(&rows.map(|r| (r, 10, "#")).collect::<Vec<_>>()),
+        tuning,
+    );
+    w.player.x = 10 * TILE - player::W;
+    w.player.y = y;
+    w.player.grounded = false;
+    w
+}
+
+#[test]
+fn a_firm_grip_holds_and_a_slipping_grip_slides() {
+    let firm = Tuning::default();
+    let mut w = at_wall(1..15, 4 * TILE, firm);
+    run(
+        &mut w,
+        Intent {
+            grab: true,
+            ..Intent::default()
+        },
+        30,
+    );
+    let y = w.player.y;
+    run(
+        &mut w,
+        Intent {
+            grab: true,
+            ..Intent::default()
+        },
+        60,
+    );
+    assert_eq!(w.player.y, y, "a firm grip holds");
+
+    let slip = Tuning {
+        slip_speed: 25.0,
+        ..firm
+    };
+    let mut w = at_wall(1..15, 4 * TILE, slip);
+    run(
+        &mut w,
+        Intent {
+            grab: true,
+            ..Intent::default()
+        },
+        30,
+    );
+    let y = w.player.y;
+    run(
+        &mut w,
+        Intent {
+            grab: true,
+            ..Intent::default()
+        },
+        60,
+    );
+    assert!(
+        w.player.y > y + 8,
+        "a slipping grip slides: {} -> {}",
+        y,
+        w.player.y
+    );
+    assert!(w.player.slipping);
+    assert_eq!(w.player.mode, Mode::Climb, "and still holds on");
+}
+
+#[test]
+fn a_tired_grip_slips_and_cannot_climb() {
+    let mut w = at_wall(1..15, 4 * TILE, Tuning::default());
+    run(
+        &mut w,
+        Intent {
+            grab: true,
+            ..Intent::default()
+        },
+        2,
+    );
+    w.player.stamina = 10.0;
+    let y = w.player.y;
+    run(
+        &mut w,
+        Intent {
+            grab: true,
+            move_y: -1.0,
+            ..Intent::default()
+        },
+        30,
+    );
+    assert!(w.player.y > y, "slipping down, not climbing up");
+}
+
+#[test]
+fn the_wall_stick_turns_away_and_jump_into_a_wall_jump() {
+    let t = Preset::MeatBoy.tuning();
+    let mut w = at_wall(1..15, 3 * TILE, t);
+    let into = Intent {
+        move_x: 1.0,
+        ..Intent::default()
+    };
+    run(&mut w, into, 30);
+    assert_eq!(w.player.wall_slide, 1);
+    // Pressing away: stuck for a moment, still beside the wall.
+    let away = Intent {
+        move_x: -1.0,
+        ..Intent::default()
+    };
+    run(&mut w, away, 6);
+    assert!(w.player.wall(&w.level, 1), "stuck to the wall");
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            jump_held: true,
+            ..away
+        },
+        1,
+    );
+    assert_eq!(jumps(&ev), [(JumpKind::Wall, false)]);
+    // Without the stick, the same input falls away first.
+    let mut w = at_wall(
+        1..15,
+        3 * TILE,
+        Tuning {
+            wall_stick_time: 0.0,
+            wall_jump_reach: 1,
+            ..t
+        },
+    );
+    run(&mut w, into, 30);
+    run(&mut w, away, 6);
+    assert!(!w.player.wall(&w.level, 1));
+}
+
+#[test]
+fn presets_switch_abilities_off() {
+    let mut w = World::new(room(&[]), Preset::MeatBoy.tuning());
+    jump(&mut w, 10, 0);
+    let ev = run(
+        &mut w,
+        Intent {
+            dash_pressed: true,
+            dive_pressed: true,
+            jump_pressed: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert!(
+        ev.is_empty()
+            || !ev.iter().any(|e| matches!(
+                e,
+                Event::Dashed { .. } | Event::DiveStarted | Event::Jumped { .. }
+            )),
+        "{ev:?}"
+    );
+
+    let mut w = World::new(room(&[]), Preset::HollowKnight.tuning());
+    jump(&mut w, 10, 0);
+    let ev = run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            move_y: -1.0,
+            dash_pressed: true,
+            ..Intent::default()
+        },
+        1,
+    );
+    assert!(
+        ev.contains(&Event::Dashed { dx: 1.0, dy: 0.0 }),
+        "sideways only: {ev:?}"
+    );
+}

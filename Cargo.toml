@@ -1,0 +1,43 @@
+[package]
+name = "animation"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+description = "A small retro platformer built around a pluggable, configurable animation controller: jump queueing, hangtime, land-and-roll, double jump."
+keywords = ["game", "platformer", "animation", "retro", "pixel-art"]
+categories = ["games"]
+license = "EUPL-1.2"
+authors = ["Markus Mayer"]
+publish = false
+
+[dependencies]
+game-toolkit = "0.10"
+log = "0.4"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+env_logger = "0.11"
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+missing_docs_in_private_items = "warn"
+dbg_macro = "warn"
+todo = "warn"
+manual_let_else = "warn"
+semicolon_if_nothing_returned = "warn"
+uninlined_format_args = "warn"
+
+# Our code lightly optimized, dependencies fully: playable debug builds that still compile fast.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
