@@ -35,11 +35,13 @@ through bools and floats.
 
 - Standing: `idle` (ping-pong breathing), `idle_fidget` (after 5 s still, once, back to
   idle), `look_up` / `look_down` (after holding up or down for 0.15 s).
-- Ground: `run` (rate by speed, `step` markers), `skid`, `land` (once, into idle or run),
+- Ground: `run` (rate by speed, `step` markers), `sprint` (above 110 px/s, back under 100),
+  `skid`, `land` (once, into idle or run),
   `hard_land` (locked), `roll`.
 - Blocks: `push`, `pull` (rate by speed, `step` markers), `box_hold`.
 - Air: `takeoff` → `rise` → `apex` → `fall`; one-shots `double` (locked flip) or `wings`
-  (chosen by the `wings` bool: the same trigger, two looks), `wall_jump`, `hop`, `drop`.
+  (chosen by the `wings` bool: the same trigger, two looks), `wall_jump`, `hop`, `drop`;
+  `glide` (any air state while `gliding`).
 - Dashes: `dash_side`, `dash_up`, `dash_down`, chosen by `dash_y`.
 - Walls: `climb` (rate by vertical speed) ↔ `grip_slip`, `wall_slide`.
 - Dive: `dive_windup` → `dive` → `dive_land` (locked).

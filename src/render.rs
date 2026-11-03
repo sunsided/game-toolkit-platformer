@@ -66,8 +66,17 @@ pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
             r.put(cx + 3, cy, pal::STEEL);
         }
     }
-    for b in &s.world.blocks {
-        let q = b.rect();
+    let rumble = s.world.straining();
+    for (i, b) in s.world.blocks.iter().enumerate() {
+        let mut q = b.rect();
+        if rumble == Some(i) {
+            // Straining against it: it shudders a pixel each way and sheds a little dust.
+            q.x += [0, 1, 0, -1][(s.world.tick / 3 % 4) as usize];
+            if s.world.tick % 6 < 3 {
+                r.put(q.x - 1, q.bottom() - 1, pal::PALE);
+                r.put(q.right(), q.bottom() - 2, pal::PALE);
+            }
+        }
         r.fill_rect(q.x, q.y, q.w, q.h, pal::WOOD);
         r.rect_outline(q.x, q.y, q.w, q.h, pal::WOOD_DK);
         r.line(

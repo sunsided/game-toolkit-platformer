@@ -15,16 +15,21 @@ pub enum Preset {
     /// Snappy: instant run, hard jump cut, double jump, horizontal dash, wall cling that
     /// slips, dive, hard landings.
     HollowKnight,
-    /// Fast and slippery: momentum runs, strong wall jumps, wall stick, nothing else.
+    /// Fast and slippery: walk or hold to run, momentum, strong wall jumps, wall stick,
+    /// nothing else.
     MeatBoy,
+    /// Hollow Knight's sequel: double jump (Faydown Cloak), then a glide on holding jump
+    /// (Drifter's Cloak); sideways dash, wall jumps, no dive.
+    Silksong,
 }
 
 impl Preset {
     /// Every preset, in cycling order.
-    pub const ALL: [Preset; 4] = [
+    pub const ALL: [Preset; 5] = [
         Preset::Hybrid,
         Preset::Celeste,
         Preset::HollowKnight,
+        Preset::Silksong,
         Preset::MeatBoy,
     ];
 
@@ -35,6 +40,7 @@ impl Preset {
             Preset::Celeste => "celeste-like",
             Preset::HollowKnight => "hollow-knight-like",
             Preset::MeatBoy => "meat-boy-like",
+            Preset::Silksong => "silksong-like",
         }
     }
 
@@ -60,6 +66,9 @@ impl Preset {
                 wall_stick_time: 0.0,
                 // Only the ground (and crystals) give the dash back.
                 wall_refills_dashes: false,
+                glide: false,
+                run_roll: false,
+                sprint: false,
                 ..base
             },
             Preset::HollowKnight => Tuning {
@@ -79,10 +88,22 @@ impl Preset {
                 wall_climb_lock: 0.08,
                 roll_drop: never,
                 wings: true,
+                glide: false,
+                run_roll: false,
+                sprint: false,
                 ..base
             },
+            Preset::Silksong => Tuning {
+                dive: false,
+                glide: true,
+                run_roll: false,
+                wings: false,
+                ..Preset::HollowKnight.tuning()
+            },
             Preset::MeatBoy => Tuning {
-                run_speed: 150.0,
+                // Walk, and hold the run button to run, as in Super Meat Boy.
+                run_speed: 90.0,
+                sprint_speed: 160.0,
                 run_accel: 600.0,
                 turn_accel: 1400.0,
                 run_decel: 900.0,
@@ -106,6 +127,8 @@ impl Preset {
                 wall_climb_lock: 0.05,
                 roll_drop: never,
                 hard_land_drop: never,
+                glide: false,
+                run_roll: false,
                 ..base
             },
         }
@@ -117,6 +140,10 @@ impl Preset {
 pub struct Tuning {
     /// Top running speed.
     pub run_speed: f32,
+    /// A sprint button exists.
+    pub sprint: bool,
+    /// Top speed while sprinting.
+    pub sprint_speed: f32,
     /// Acceleration toward the stick's speed on the ground.
     pub run_accel: f32,
     /// Acceleration when the stick points against the motion (turning around).
@@ -239,6 +266,17 @@ pub struct Tuning {
     /// Diving is possible at all.
     pub dive: bool,
 
+    /// Gliding: a jump pressed in the air and held (after the air jump, if one is left)
+    /// opens a cloak once falling.
+    pub glide: bool,
+    /// Terminal falling speed gliding.
+    pub glide_fall_speed: f32,
+
+    /// Tapping down while running at speed rolls.
+    pub run_roll: bool,
+    /// Horizontal speed needed for a roll from a run.
+    pub run_roll_speed: f32,
+
     /// Blocks can be pushed (walk into them) and pulled (grab, walk away).
     pub push: bool,
     /// Walking speed pushing a block.
@@ -282,6 +320,8 @@ impl Default for Tuning {
     fn default() -> Self {
         Self {
             run_speed: 90.0,
+            sprint: true,
+            sprint_speed: 140.0,
             run_accel: 1000.0,
             turn_accel: 1600.0,
             run_decel: 1200.0,
@@ -342,6 +382,12 @@ impl Default for Tuning {
             wall_stick_time: 0.1,
 
             dive: true,
+
+            glide: true,
+            glide_fall_speed: 30.0,
+
+            run_roll: true,
+            run_roll_speed: 100.0,
 
             push: true,
             push_speed: 40.0,

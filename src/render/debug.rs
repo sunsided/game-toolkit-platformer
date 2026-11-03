@@ -175,8 +175,10 @@ fn log(r: &mut dyn Raster, s: &Session, full: bool) {
 fn keys(p: Option<Preset>) -> &'static str {
     match p {
         Some(Preset::Celeste) => "C JUMP X DASH Z GRAB",
-        Some(Preset::MeatBoy) => "SPACE JUMP",
-        _ => "Z JUMP C DASH S GRAB DN+A DIVE",
+        Some(Preset::MeatBoy) => "SPACE JUMP SHIFT RUN",
+        Some(Preset::Silksong) => "Z JUMP, HOLD: GLIDE C DASH",
+        Some(Preset::HollowKnight) => "Z JUMP C DASH DN+A DIVE",
+        _ => "Z JUMP C DASH S GRAB DN+A DIVE SHIFT SPRINT",
     }
 }
 

@@ -19,7 +19,7 @@ mod dive;
 mod jump;
 mod land;
 
-use super::{Event, Intent, Level, Rect, TILE, Tuning};
+use super::{Event, Intent, JumpKind, Level, Rect, TILE, Tuning};
 
 /// Hitbox width in pixels.
 pub const W: i32 = 6;
@@ -150,6 +150,12 @@ pub struct Player {
     /// How far the block has given, 0 (stuck) to 1 (sliding freely); scales push and
     /// pull speed (set by the world).
     pub shove_give: f32,
+    /// A jump was pressed in the air and is still held: falling, it glides.
+    glide_armed: bool,
+    /// Gliding.
+    pub gliding: bool,
+    /// Down was held last step, to see a fresh tap.
+    was_down: bool,
     /// Highest (smallest) `y` of this airtime, for the drop height on landing.
     pub peak_y: i32,
 }
@@ -190,6 +196,9 @@ impl Player {
             look_time: 0.0,
             shove: Shove::None,
             shove_give: 0.0,
+            glide_armed: false,
+            gliding: false,
+            was_down: false,
             peak_y: y,
         }
     }
@@ -222,8 +231,25 @@ impl Player {
         self.try_dive(i, t, ev);
         self.dive_motion(t);
         self.climb(level, i, t, dt, ev);
-        self.run(level, move_x, t, dt);
+        self.run(level, move_x, t.sprint && i.sprint, t, dt);
+        let airborne = !self.grounded && self.coyote <= 0.0;
+        let before = ev.len();
         let jumped = self.jump(level, i, move_x, t, ev);
+        let off_wall = ev[before..].iter().any(|e| {
+            matches!(
+                e,
+                Event::Jumped {
+                    kind: JumpKind::Wall | JumpKind::Climb,
+                    ..
+                }
+            )
+        });
+        if i.jump_pressed && airborne && !off_wall {
+            self.glide_armed = true;
+        }
+        if !i.jump_held || self.mode != Mode::Normal {
+            self.glide_armed = false;
+        }
         self.fall(level, i, move_x, t, dt, ev);
 
         let landing_vy = self.vy;
@@ -237,11 +263,43 @@ impl Player {
         self.move_y(level, self.vy * dt, t.corner_correction, ev);
         self.land(level, move_x, landing_vy, jumped, t, ev);
         self.look(i, move_x, dt);
+        self.run_roll(i, t, ev);
 
         if self.y > level.floor_y() + 4 * TILE {
             *self = Self::spawn(level, t);
             ev.push(Event::Respawned);
         }
+    }
+
+    /// Open or close the glide, reporting the change.
+    fn set_gliding(&mut self, on: bool, ev: &mut Vec<Event>) {
+        if on != self.gliding {
+            self.gliding = on;
+            ev.push(if on {
+                Event::GlideStarted
+            } else {
+                Event::GlideEnded
+            });
+        }
+    }
+
+    /// A fresh tap of down while running at speed on the ground rolls.
+    fn run_roll(&mut self, i: &Intent, t: &Tuning, ev: &mut Vec<Event>) {
+        let down = i.down();
+        let tap = down && !self.was_down;
+        self.was_down = down;
+        if !t.run_roll
+            || !tap
+            || !self.grounded
+            || self.mode != Mode::Normal
+            || self.vx.abs() < t.run_roll_speed
+        {
+            return;
+        }
+        self.facing = self.vx.signum() as i32;
+        self.vx = self.facing as f32 * self.vx.abs().max(t.roll_speed);
+        self.mode = Mode::Roll { t: 0.0 };
+        ev.push(Event::RollStarted);
     }
 
     /// Holding up or down while standing still looks that way.
@@ -356,7 +414,7 @@ impl Player {
 
     /// Horizontal speed: rolls keep their speed, recoveries brake, dashes, dives and climbs
     /// set their own, otherwise accelerate toward the stick.
-    fn run(&mut self, level: &Level, move_x: f32, t: &Tuning, dt: f32) {
+    fn run(&mut self, level: &Level, move_x: f32, sprint: bool, t: &Tuning, dt: f32) {
         let side = self.wall_slide;
         if self.mode == Mode::Normal
             && side != 0
@@ -379,6 +437,7 @@ impl Player {
             Mode::Dash { .. } | Mode::Dive { .. } | Mode::Climb => {}
             Mode::Normal => {
                 let top = match self.shove {
+                    Shove::None if sprint => t.sprint_speed,
                     Shove::None => t.run_speed,
                     Shove::Push { .. } => t.push_speed * self.shove_give,
                     Shove::Pull { .. } => t.pull_speed * self.shove_give,
@@ -423,6 +482,7 @@ impl Player {
         self.wall_slide = 0;
         if self.grounded || !matches!(self.mode, Mode::Normal | Mode::Roll { .. }) {
             self.wall_stick = 0.0;
+            self.set_gliding(false, ev);
             return;
         }
         let before = self.vy;
@@ -444,6 +504,16 @@ impl Player {
             self.wall_slide = stuck_side;
         } else {
             self.wall_stick = 0.0;
+        }
+        let glide = t.glide
+            && self.glide_armed
+            && i.jump_held
+            && before > 0.0
+            && self.wall_slide == 0
+            && self.mode == Mode::Normal;
+        self.set_gliding(glide, ev);
+        if glide {
+            max = max.min(t.glide_fall_speed);
         }
         // Over the cap (a fast fall released, a wall caught), brake toward it; otherwise
         // accelerate up to it.

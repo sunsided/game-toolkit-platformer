@@ -19,6 +19,8 @@ pub struct Intent {
     pub grab: bool,
     /// Dive was pressed since the last step.
     pub dive_pressed: bool,
+    /// Sprint is held: a higher top speed.
+    pub sprint: bool,
 }
 
 impl Intent {

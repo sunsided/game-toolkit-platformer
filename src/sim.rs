@@ -130,6 +130,12 @@ impl World {
         self.tick += 1;
     }
 
+    /// The block the hero strains against but which hasn't budged yet, if any: it rumbles.
+    pub fn straining(&self) -> Option<usize> {
+        let (_, i) = self.last_shove?;
+        (self.effort > 0.0 && self.effort < self.tuning.push_breakaway).then_some(i)
+    }
+
     /// Copy the blocks' boxes into the level, where collisions see them.
     fn sync_blocks(&mut self) {
         self.level.blocks.clear();

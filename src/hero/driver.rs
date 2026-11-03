@@ -30,6 +30,8 @@ pub struct HeroDriver {
     pulling: ParamId,
     /// `holding`
     holding: ParamId,
+    /// `gliding`
+    gliding: ParamId,
     /// `speed`
     speed: ParamId,
     /// `vy`
@@ -89,6 +91,7 @@ impl HeroDriver {
             pushing: id("pushing"),
             pulling: id("pulling"),
             holding: id("holding"),
+            gliding: id("gliding"),
             speed: id("speed"),
             vy: id("vy"),
             dash_y: id("dash_y"),
@@ -131,6 +134,7 @@ impl Driver<World> for HeroDriver {
         p.set_bool(self.pushing, matches!(pl.shove, Shove::Push { .. }));
         p.set_bool(self.pulling, matches!(pl.shove, Shove::Pull { .. }));
         p.set_bool(self.holding, matches!(pl.shove, Shove::Hold { .. }));
+        p.set_bool(self.gliding, pl.gliding);
         // Signed seconds held: negative looking up, positive looking down.
         p.set_float(self.look, pl.look as f32 * pl.look_time);
         p.set_float(self.speed, pl.vx.abs());

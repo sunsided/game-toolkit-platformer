@@ -1222,3 +1222,130 @@ fn blocks_stick_before_they_budge() {
     run(&mut w, Intent::default(), 2);
     assert_eq!(w.effort, 0.0);
 }
+
+#[test]
+fn holding_a_jump_pressed_in_the_air_glides() {
+    let t = Preset::Silksong.tuning();
+    let mut w = World::new(room(&[]), t);
+    // A ground jump held through its apex does not glide: that's hangtime.
+    jump(&mut w, 25, 0);
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_held: true,
+            ..Intent::default()
+        },
+        20,
+    );
+    assert!(!ev.contains(&Event::GlideStarted));
+    // Pressed again in the air: the air jump goes first, then the glide once falling.
+    let press = Intent {
+        jump_pressed: true,
+        jump_held: true,
+        ..Intent::default()
+    };
+    let mut ev = run(&mut w, press, 1);
+    assert_eq!(jumps(&ev), [(JumpKind::Double, false)]);
+    ev.extend(run(
+        &mut w,
+        Intent {
+            jump_held: true,
+            ..Intent::default()
+        },
+        60,
+    ));
+    assert!(ev.contains(&Event::GlideStarted), "{ev:?}");
+    assert!(w.player.gliding);
+    assert!(w.player.vy <= t.glide_fall_speed + 0.5);
+    // Letting go closes it.
+    let ev = run(&mut w, Intent::default(), 1);
+    assert!(ev.contains(&Event::GlideEnded));
+}
+
+#[test]
+fn tapping_down_while_sprinting_rolls() {
+    let mut w = world(room(&[]));
+    let walk = Intent {
+        move_x: 1.0,
+        ..Intent::default()
+    };
+    let sprint = Intent {
+        sprint: true,
+        ..walk
+    };
+    // Plain running is too slow for it.
+    run(&mut w, walk, 40);
+    let ev = run(
+        &mut w,
+        Intent {
+            move_y: 1.0,
+            ..walk
+        },
+        1,
+    );
+    assert!(!ev.contains(&Event::RollStarted));
+    run(&mut w, sprint, 40);
+    let ev = run(
+        &mut w,
+        Intent {
+            move_y: 1.0,
+            ..sprint
+        },
+        1,
+    );
+    assert!(ev.contains(&Event::RollStarted), "{ev:?}");
+    // Holding down doesn't roll again.
+    let ev = run(
+        &mut w,
+        Intent {
+            move_y: 1.0,
+            ..sprint
+        },
+        60,
+    );
+    assert!(!ev.contains(&Event::RollStarted));
+}
+
+#[test]
+fn a_block_rumbles_while_it_sticks() {
+    let mut w = with_block();
+    while !matches!(w.player.shove, Shove::Push { .. }) {
+        w.step(&Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        });
+    }
+    assert_eq!(w.straining(), Some(0));
+    run(
+        &mut w,
+        Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        },
+        40,
+    );
+    assert_eq!(w.straining(), None, "it budged");
+}
+
+#[test]
+fn sprinting_raises_the_top_speed_where_the_preset_has_it() {
+    /// Top speed after a second of running, sprinting or not, with `t`.
+    fn top(t: Tuning, sprint: bool) -> f32 {
+        let mut w = World::new(room(&[]), t);
+        run(
+            &mut w,
+            Intent {
+                move_x: 1.0,
+                sprint,
+                ..Intent::default()
+            },
+            120,
+        );
+        w.player.vx
+    }
+    let t = Tuning::default();
+    assert!((top(t, false) - t.run_speed).abs() < 1.0);
+    assert!((top(t, true) - t.sprint_speed).abs() < 1.0);
+    let hk = Preset::HollowKnight.tuning();
+    assert_eq!(top(hk, true), top(hk, false), "no sprint in Hollow Knight");
+}

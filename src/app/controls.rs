@@ -4,15 +4,17 @@
 //! Each feel preset brings its game's control scheme ([`Scheme::of`]); F2 switches both.
 //! Movement is always the arrows, the left stick and the d-pad.
 //!
-//! | Action | Hollow Knight (hybrid too) | Celeste | Super Meat Boy |
+//! | Action | Hollow Knight (hybrid, Silksong too) | Celeste | Super Meat Boy |
 //! |---|---|---|---|
 //! | jump | Z, Space / A | C, Space / A, Y | Space, Z / A |
 //! | dash | C / RT | X / X, B | - |
 //! | grab (hold) | S / LT, LB | Z / RT, LT, RB, LB | - |
 //! | dive | down + A / down + B, down + RB | - | - |
+//! | sprint (hold) | Shift / X (hybrid only) | - | Shift, X / X, RT |
 //!
 //! Hollow Knight has no grab, so it takes the super-dash slot; its dive is down + cast, as
-//! Desolate Dive is. Super Meat Boy's run button is not modeled: its preset always runs.
+//! Desolate Dive is. Sprint is Super Meat Boy's run button; of the others only the hybrid
+//! tuning has a sprint.
 
 use game_toolkit::prelude::*;
 
@@ -41,6 +43,10 @@ pub struct Scheme {
     pub cast: &'static [Key],
     /// Cast buttons.
     pub cast_pad: &'static [Button],
+    /// Sprint keys (held).
+    pub sprint: &'static [Key],
+    /// Sprint buttons (held).
+    pub sprint_pad: &'static [Button],
 }
 
 // gilrs names: RightTrigger2 / LeftTrigger2 are the triggers, RightTrigger / LeftTrigger
@@ -56,6 +62,8 @@ const HOLLOW_KNIGHT: Scheme = Scheme {
     grab_pad: &[Button::LeftTrigger2, Button::LeftTrigger],
     cast: &[Key::KeyA],
     cast_pad: &[Button::East, Button::RightTrigger],
+    sprint: &[Key::ShiftLeft, Key::ShiftRight],
+    sprint_pad: &[Button::West],
 };
 
 /// Celeste's defaults.
@@ -73,9 +81,11 @@ const CELESTE: Scheme = Scheme {
     ],
     cast: &[],
     cast_pad: &[],
+    sprint: &[],
+    sprint_pad: &[],
 };
 
-/// Super Meat Boy: it only jumps.
+/// Super Meat Boy: jump, and hold to run.
 const MEAT_BOY: Scheme = Scheme {
     jump: &[Key::Space, Key::KeyZ],
     jump_pad: &[Button::South],
@@ -85,6 +95,8 @@ const MEAT_BOY: Scheme = Scheme {
     grab_pad: &[],
     cast: &[],
     cast_pad: &[],
+    sprint: &[Key::ShiftLeft, Key::ShiftRight, Key::KeyX],
+    sprint_pad: &[Button::West, Button::RightTrigger2],
 };
 
 impl Scheme {
@@ -93,7 +105,8 @@ impl Scheme {
         match preset {
             Some(Preset::Celeste) => CELESTE,
             Some(Preset::MeatBoy) => MEAT_BOY,
-            Some(Preset::Hybrid | Preset::HollowKnight) | None => HOLLOW_KNIGHT,
+            // Silksong's own layout isn't modeled; it gets its predecessor's.
+            Some(Preset::Hybrid | Preset::HollowKnight | Preset::Silksong) | None => HOLLOW_KNIGHT,
         }
     }
 }
@@ -112,6 +125,7 @@ pub fn read_intent(input: &Input, scheme: &Scheme) -> Intent {
         dash_pressed: pressed(scheme.dash),
         grab: held(scheme.grab),
         dive_pressed: false,
+        sprint: held(scheme.sprint),
     };
     let mut cast = pressed(scheme.cast);
     if let Some(g) = input.first_gamepad() {
@@ -133,6 +147,7 @@ pub fn read_intent(input: &Input, scheme: &Scheme) -> Intent {
         i.dash_pressed |= pressed(scheme.dash_pad);
         i.grab |= held(scheme.grab_pad);
         cast |= pressed(scheme.cast_pad);
+        i.sprint |= held(scheme.sprint_pad);
     }
     i.dive_pressed = cast && i.down();
     i

@@ -7,11 +7,12 @@
 //! current animation short.
 //!
 //! ```text
-//!   idle <-> run <-> skid                ground, by speed and skid
+//!   idle <-> run <-> sprint, skid        ground, by speed and skid
 //!   idle -> idle_fidget -> idle          after standing a while
 //!   idle <-> look_up / look_down         holding up or down standing still
 //!   idle <-> push / pull / box_hold      at a block
 //!   takeoff -> rise -> apex -> fall -> land -> idle
+//!   air states <-> glide                 holding jump, falling, with the cloak
 //!   double (flip) or wings, wall_jump, hop, drop: one-shots into rise / fall
 //!   any -> roll | hard_land | dash_{side,up,down} | climb <-> grip_slip | wall_slide
 //!   any -> dive_windup -> dive -> dive_land
@@ -24,6 +25,8 @@ use crate::anim::{Clip, Cond, Graph, GraphSpec, Name, Playback, StateSpec, Trans
 
 /// Below this horizontal speed the hero counts as standing.
 const STILL: f32 = 10.0;
+/// Above this speed the run becomes a sprint (and below `SPRINT - 10` a run again).
+const SPRINT: f32 = 110.0;
 /// Within this vertical speed of zero the hero is at the apex.
 const APEX: f32 = 40.0;
 /// Seconds up or down must be held standing still before the hero looks.
@@ -86,8 +89,9 @@ const AIR: [&str; 9] = [
 /// Standing still: where looking, running and blocks start.
 const STANDING: [&str; 4] = ["idle", "idle_fidget", "look_up", "look_down"];
 /// The plain ground states, which can walk off ledges.
-const GROUND: [&str; 10] = [
+const GROUND: [&str; 11] = [
     "idle",
+    "sprint",
     "idle_fidget",
     "look_up",
     "look_down",
@@ -119,6 +123,7 @@ pub fn spec() -> GraphSpec {
         .bool("pushing")
         .bool("pulling")
         .bool("holding")
+        .bool("gliding")
         .float("speed")
         .float("vy")
         .float("dash_y")
@@ -170,6 +175,15 @@ pub fn spec() -> GraphSpec {
                     .marker(2, "step"),
             )
             .rate_by("speed", 90.0, 0.4, 1.6),
+        )
+        .state(
+            StateSpec::new(
+                "sprint",
+                looping(&s::SPRINT, 0.07)
+                    .marker(0, "step")
+                    .marker(2, "step"),
+            )
+            .rate_by("speed", 140.0, 0.6, 1.4),
         )
         .state(StateSpec::new("skid", looping(&[s::SKID], 0.1)))
         .state(StateSpec::new("land", once(&[(s::LAND_A, 0.05), (s::LAND_B, 0.05)])).then("idle"))
@@ -224,6 +238,7 @@ pub fn spec() -> GraphSpec {
         .state(StateSpec::new("wall_jump", once(&[(s::WALL_JUMP, 0.1)])).then("rise"))
         .state(StateSpec::new("hop", once(&[(s::HOP, 0.12)])).then("rise"))
         .state(StateSpec::new("drop", once(&[(s::DROP, 0.1)])).then("fall"))
+        .state(StateSpec::new("glide", looping(&s::GLIDE, 0.25)))
         // Dashes, climbing, walls.
         .state(StateSpec::new("dash_side", looping(&s::DASH_SIDE, 0.04)))
         .state(StateSpec::new("dash_up", looping(&s::DASH_UP, 0.04)))
@@ -364,6 +379,13 @@ pub fn spec() -> GraphSpec {
             )
             .priority(50),
         )
+        // Gliding.
+        .transition(
+            TransitionSpec::new(AIR, "glide", is("gliding"))
+                .priority(46)
+                .breaks_lock(),
+        )
+        .transition(TransitionSpec::new(["glide"], "fall", not("gliding")).priority(45))
         // Walls.
         .transition(
             TransitionSpec::new(["rise", "apex", "fall"], "wall_slide", is("wall_slide"))
@@ -386,7 +408,7 @@ pub fn spec() -> GraphSpec {
             .priority(24),
         )
         .transition(TransitionSpec::new(STANDING, "skid", is("skid")).priority(21))
-        .transition(TransitionSpec::new(["run"], "skid", is("skid")).priority(21))
+        .transition(TransitionSpec::new(["run", "sprint"], "skid", is("skid")).priority(21))
         .transition(
             TransitionSpec::new(["skid"], "run", not("skid").and(above("speed", STILL)))
                 .priority(20),
@@ -394,6 +416,10 @@ pub fn spec() -> GraphSpec {
         .transition(TransitionSpec::new(["skid"], "idle", not("skid")).priority(19))
         .transition(TransitionSpec::new(STANDING, "run", above("speed", STILL)).priority(10))
         .transition(TransitionSpec::new(["run"], "idle", below("speed", STILL)).priority(10))
+        .transition(TransitionSpec::new(["run"], "sprint", above("speed", SPRINT)).priority(11))
+        .transition(
+            TransitionSpec::new(["sprint"], "run", below("speed", SPRINT - 10.0)).priority(11),
+        )
         .transition(
             TransitionSpec::new(
                 ["land"],

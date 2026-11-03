@@ -71,6 +71,15 @@ fn pose(sprite: u16) -> Pose {
             ..p(7.0, 11.0, -20.0, g)
         },
         s::BOX_HOLD => p(7.0, 11.0, 6.0, g),
+        67 | 69 => p(8.0, 10.0, 20.0, g),
+        68 | 70 => Pose {
+            dy: -1.0,
+            ..p(7.0, 11.0, 15.0, g)
+        },
+        65 | 66 => Pose {
+            wings: Some(if sprite == 65 { 80.0 } else { 95.0 }),
+            ..p(6.0, 11.0, if sprite == 65 { 4.0 } else { -4.0 }, a)
+        },
         s::RUN_A | s::RUN_C => p(7.0, 11.0, 10.0, g),
         s::RUN_B | s::RUN_D => Pose {
             dy: -1.0,

@@ -75,6 +75,10 @@ pub enum Event {
     StaminaOut,
     /// A dive started: a short hang, then straight down.
     DiveStarted,
+    /// The cloak opened: gliding.
+    GlideStarted,
+    /// The glide is over (jump released, landed, a wall, a dash).
+    GlideEnded,
     /// A dive hit the ground.
     DiveImpact {
         /// Pixels fallen from the dive's start.

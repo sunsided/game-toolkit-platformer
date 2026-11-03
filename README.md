@@ -16,12 +16,13 @@ pixel grid, no art yet: the hero is drawn as placeholder poses, one per sprite n
 Movement is always the arrows, the left stick or the d-pad. The buttons follow the feel
 preset (F2 cycles them, the overlay's bottom-right corner shows the keys):
 
-| Action | Hollow Knight-like, hybrid | Celeste-like | Meat Boy-like |
+| Action | Hollow Knight-like, Silksong-like, hybrid | Celeste-like | Meat Boy-like |
 |---|---|---|---|
 | jump (hold for height) | Z, Space / A | C, Space / A, Y | Space, Z / A |
 | dash | C / RT | X / X, B | |
 | grab (hold) | S / LT, LB | Z / RT, LT, RB, LB | |
 | dive | down + A / down + B, down + RB | | |
+| sprint / run (hold) | Shift / X (hybrid only) | | Shift, X / X, RT |
 
 Keyboard / gamepad (Xbox names). Hollow Knight has no grab, so it takes the super-dash
 slot; its dive is down + cast, as Desolate Dive is.
@@ -34,9 +35,15 @@ slot; its dive is down + cast, as Desolate Dive is.
   **Coyote time**: you can still jump a moment after running off a ledge.
 - **Double jump**: jump again in the air (wings in the Hollow Knight preset). A wall gives
   it back.
-- **Roll**: drop from 6 tiles (48 px) or more and keep holding left or right as you land.
-  Jump during the roll to keep its speed. The tower on the left or the chimney lids are
-  high enough.
+- **Run and sprint**: moving is running. Hold sprint for a higher top speed (hybrid); in
+  the Meat Boy preset you walk, and hold it to run, as in Super Meat Boy. Sprint speed
+  carries into jumps.
+- **Roll**: drop from 6 tiles (48 px) or more and keep holding left or right as you land,
+  or tap down while sprinting. Jump during the roll to keep its speed. The tower
+  on the left or the chimney lids are high enough for the landing roll.
+- **Glide** (hybrid, Silksong-like): press jump in the air and keep holding it. The press
+  spends the double jump first if one is left; once falling, the cloak opens and the fall
+  slows to a drift. Let go to drop.
 - **Hard landing**: drop from 12 tiles (96 px) or more without holding a direction.
   Pressing jump just before landing skips both roll and hard landing.
 - **Dash**: dash with a direction (eight ways, up and down too; with none, the way you
@@ -48,8 +55,8 @@ slot; its dive is down + cast, as Desolate Dive is.
   the top hops over. A tired grip slips.
 - **Dive**: down + dive in the air: a short hang, then straight down.
 - **Drop through**: down + jump on a thin platform.
-- **Push and pull**: walk into a box to push it (it takes a moment to budge); hold grab
-  facing it and walk away to pull it.
+- **Push and pull**: walk into a box to push it; it rumbles a moment before it budges.
+  Hold grab facing it and walk away to pull it.
 - **Look up and down**: hold up or down while standing still.
 
 Debug: F1 overlay (compact, full, off), F2 next preset, P pause, `.` step, `[` `]`

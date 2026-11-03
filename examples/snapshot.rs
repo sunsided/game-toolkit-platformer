@@ -55,6 +55,7 @@ const RIGHT: Intent = Intent {
     dash_pressed: false,
     grab: false,
     dive_pressed: false,
+    sprint: false,
 };
 
 /// The side (-1, 1) of a wall within 2 px, or 0.
@@ -125,6 +126,31 @@ const SCRIPTS: &[Script] = &[
             } else {
                 i
             }
+        },
+    },
+    Script {
+        name: "glide",
+        preset: Some(Preset::Silksong),
+        at: Some((27 * TILE, 5 * TILE - player::H)),
+        steps: 300,
+        intent: |k, _| Intent {
+            move_x: 1.0,
+            // Jump, press again in the air (the double jump), keep holding: glide.
+            jump_pressed: k == 5 || k == 40,
+            jump_held: (5..25).contains(&k) || k >= 40,
+            ..Intent::default()
+        },
+    },
+    Script {
+        name: "run-roll",
+        preset: None,
+        at: None,
+        steps: 110,
+        intent: |k, _| Intent {
+            move_x: 1.0,
+            sprint: true,
+            move_y: if k == 40 { 1.0 } else { 0.0 },
+            ..Intent::default()
         },
     },
     Script {

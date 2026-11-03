@@ -79,5 +79,9 @@ pub const PUSH: [u16; 4] = [56, 57, 58, 59];
 pub const PULL: [u16; 4] = [60, 61, 62, 63];
 /// Holding a block without moving.
 pub const BOX_HOLD: u16 = 64;
+/// Gliding under the open cloak, swaying.
+pub const GLIDE: [u16; 2] = [65, 66];
+/// Sprint cycle: longer strides, leaning further in.
+pub const SPRINT: [u16; 4] = [67, 68, 69, 70];
 /// Number of sprites.
-pub const COUNT: u16 = 65;
+pub const COUNT: u16 = 71;
