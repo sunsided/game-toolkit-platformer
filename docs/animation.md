@@ -52,7 +52,9 @@ through bools and floats.
 - Ground: `run` (rate by speed, `step` markers), `sprint` (above 110 px/s, back under 100),
   `skid`, `land` (once, into idle or run),
   `hard_land` (locked), `roll`.
-- Blocks: `push`, `pull` (rate by speed, `step` markers), `box_hold`.
+- Blocks: `push`, `pull` (rate by speed, `step` markers), `box_hold`. `push` also plays,
+  without end, while running into a wall on the ground (`wall_push`, set by the driver
+  from `Player::contacts`), so a wall doesn't start a run it stops at once.
 - Air: `takeoff` → `rise` → `apex` → `fall`; one-shots `double` (locked flip) or `wings`
   (chosen by the `wings` bool: the same trigger, two looks), `wall_jump`, `hop`, `drop`;
   `glide` (any air state while `gliding`).

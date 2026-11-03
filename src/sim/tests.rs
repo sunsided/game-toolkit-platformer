@@ -2038,6 +2038,31 @@ fn a_custom_bouncy_platform_bounces_from_above_and_lets_through_from_below() {
 }
 
 #[test]
+fn running_into_a_wall_on_the_ground_keeps_the_speed_at_zero() {
+    let mut w = world(room(&[]));
+    let right = Intent {
+        move_x: 1.0,
+        ..Intent::default()
+    };
+    // Up against the room's right wall, standing.
+    w.player.x = 23 * TILE - player::W;
+    run(&mut w, Intent::default(), 10);
+    assert!(w.player.grounded && w.player.wall(&w.level, 1));
+    for k in 0..120 {
+        w.step(&right);
+        assert_eq!(w.player.vx, 0.0, "step {k}: no speed builds up against it");
+        assert_eq!(w.player.contacts.wall, 1);
+    }
+    // Pressing away runs off it at once.
+    let left = Intent {
+        move_x: -1.0,
+        ..Intent::default()
+    };
+    run(&mut w, left, 5);
+    assert!(w.player.vx < 0.0);
+}
+
+#[test]
 fn contacts_say_what_the_body_ran_into() {
     let mut w = world(room(&[(11, 1, "######")]));
     let right = Intent {

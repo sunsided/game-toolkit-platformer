@@ -24,6 +24,8 @@ pub struct HeroDriver {
     hard_landing: ParamId,
     /// `wings`
     wings: ParamId,
+    /// `wall_push`
+    wall_push: ParamId,
     /// `gliding`
     gliding: ParamId,
     /// `super_bonk`
@@ -115,6 +117,7 @@ impl HeroDriver {
             wall_slide: id("wall_slide", B)?,
             hard_landing: id("hard_landing", B)?,
             wings: id("wings", B)?,
+            wall_push: id("wall_push", B)?,
             gliding: id("gliding", B)?,
             super_bonk: id("super_bonk", T)?,
             super_launch: id("super_launch", T)?,
@@ -160,6 +163,11 @@ impl Driver<World> for HeroDriver {
         p.set_bool(self.hard_landing, matches!(pl.mode, Mode::HardLand { .. }));
         p.set_bool(self.slipping, pl.slipping);
         p.set_bool(self.wings, w.tuning.wings);
+        // On the ground, running into a wall (the movement keeps the speed at zero there).
+        p.set_bool(
+            self.wall_push,
+            pl.grounded && pl.mode == Mode::Normal && pl.contacts.wall != 0,
+        );
         p.set_bool(self.gliding, pl.gliding);
         let charge = match pl.mode {
             Mode::SuperCharge { t, .. } => Some(t),

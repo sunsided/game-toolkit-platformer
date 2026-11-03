@@ -5,6 +5,10 @@ moved one pixel at a time against 8 px tiles (`#` solid, `=` one-way platform,
 `*` dash crystal). The hitbox is 6x12 by default (`Tuning::size`, read into
 `Player::w`/`h`; the other numbers stay in units and don't scale with it). A game with
 bigger tiles keeps the units and converts at the facade (`Builder::scale`).
+Standing flush against a wall and running into it keeps the speed at zero (otherwise the
+remainder would let it build until the next whole pixel is blocked, and the run
+animation would start and stop); in the air the speed is kept, so a jump along a wall
+still carries over its top.
 
 ## The demo level
 

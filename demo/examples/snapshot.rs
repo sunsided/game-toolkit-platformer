@@ -313,6 +313,20 @@ const SCRIPTS: &[Script] = &[
         },
     },
     Script {
+        name: "wall-push",
+        preset: None,
+        at: Some((3 * TILE, 25 * TILE - player::H)),
+        steps: 300,
+        // Run into the level's left wall, keep pushing, let go.
+        intent: |k, _| match k {
+            0..240 => Intent {
+                move_x: -1.0,
+                ..Intent::default()
+            },
+            _ => Intent::default(),
+        },
+    },
+    Script {
         name: "look",
         preset: None,
         at: None,

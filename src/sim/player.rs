@@ -342,8 +342,16 @@ impl Player {
             self.vx.signum() as i32
         };
         let blocked = self.move_x(level, self.vx * dt);
-        if blocked || self.wall(level, toward) {
+        let flush = toward != 0 && self.wall(level, toward);
+        if blocked || flush {
             self.contacts.wall = toward;
+        }
+        // Standing flush against the wall it runs toward, the sub-pixel remainder would let
+        // speed build for a few steps before the next whole unit is blocked: a running
+        // animation that starts and stops. On the ground the speed stays at zero instead; in
+        // the air it is kept, so a jump along a wall still carries over its top.
+        if flush && !blocked && self.grounded && self.mode == Mode::Normal {
+            self.vx = 0.0;
         }
         if blocked {
             self.vx = 0.0;

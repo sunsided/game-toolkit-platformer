@@ -121,3 +121,21 @@ fn every_hero_sprite_has_a_state_that_shows_it() {
         assert!(shown.contains(&sprite), "sprite {sprite} is never shown");
     }
 }
+
+#[test]
+fn running_into_a_wall_settles_instead_of_restarting_the_run() {
+    let mut s = Session::new();
+    let left = Intent {
+        move_x: -1.0,
+        ..Intent::default()
+    };
+    // From the spawn to the level's left wall, and on into it.
+    states(&mut s, left, 240);
+    assert!(s.world.player.grounded && s.world.player.wall(&s.stage, -1));
+    // Long enough for an idle fidget: she keeps pushing against it instead.
+    let seen = states(&mut s, left, 1200);
+    assert_eq!(seen, ["push"], "one state against the wall");
+    // Letting go: standing again.
+    let seen = states(&mut s, Intent::default(), 30);
+    assert_eq!(seen.last().map(String::as_str), Some("idle"), "{seen:?}");
+}

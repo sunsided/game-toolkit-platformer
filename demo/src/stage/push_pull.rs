@@ -97,6 +97,10 @@ impl Ability for PushPull {
                 // The box moves first; she follows into the room it made.
                 let amount = side as f32 * self.push_speed * give * s.dt;
                 stage.shove(id, amount, s.player.rect());
+                // She keeps at least the box's pace: up against it, the movement holds her
+                // own speed at zero, so it wouldn't build up again by itself.
+                let pace = (s.player.vx * side as f32).max(self.push_speed * give);
+                s.player.vx = side as f32 * pace;
                 self.push_speed * give
             }
             Shove::Pull { .. } => self.pull_speed * give,

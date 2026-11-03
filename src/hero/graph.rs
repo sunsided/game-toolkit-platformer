@@ -10,7 +10,7 @@
 //!   idle <-> run <-> sprint, skid        ground, by speed and skid
 //!   idle -> idle_fidget -> idle          after standing a while
 //!   idle <-> look_up / look_down         holding up or down standing still
-//!   idle <-> push / pull / box_hold      at a block
+//!   idle <-> push / pull / box_hold      at a block (push: also running into a wall)
 //!   takeoff -> rise -> apex -> fall -> land -> idle
 //!   air states <-> glide                 holding jump, falling, with the cloak
 //!   double (flip) or wings, wall_jump, hop, drop: one-shots into rise / fall
@@ -121,6 +121,7 @@ pub fn spec() -> GraphSpec {
         .bool("wall_slide")
         .bool("hard_landing")
         .bool("wings")
+        .bool("wall_push")
         // Not driven by the movement: a game with boxes sets these (the demo does).
         .bool("pushing")
         .bool("pulling")
@@ -444,15 +445,20 @@ pub fn spec() -> GraphSpec {
         // Ground.
         .transition(TransitionSpec::new(GROUND, "fall", not("grounded")).priority(30))
         // Boxes, for a game that has them: whichever the body does now; standing still
-        // again when it lets go.
+        // again when it lets go. Running into a wall pushes against it too, without end,
+        // rather than starting a run the wall stops at once.
         .transition(TransitionSpec::new(GROUND, "push", is("pushing")).priority(25))
+        .transition(TransitionSpec::new(GROUND, "push", is("wall_push")).priority(25))
         .transition(TransitionSpec::new(GROUND, "pull", is("pulling")).priority(25))
         .transition(TransitionSpec::new(GROUND, "box_hold", is("holding")).priority(25))
         .transition(
             TransitionSpec::new(
                 BLOCK,
                 "idle",
-                not("pushing").and(not("pulling")).and(not("holding")),
+                not("pushing")
+                    .and(not("pulling"))
+                    .and(not("holding"))
+                    .and(not("wall_push")),
             )
             .priority(24),
         )
