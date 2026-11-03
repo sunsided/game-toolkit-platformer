@@ -1,8 +1,10 @@
 //! A pluggable platforming controller for [game-toolkit](https://github.com/sunsided/game-toolkit):
 //! fluid, snappy movement with feel presets, and an animation state graph that follows it.
 //!
-//! The quickest start is [`Platformer`]: pick a preset, call `update` each frame, draw
-//! `sprite()` at `position()` (or call `draw_debug` until there is art). Underneath, three
+//! The quickest start is [`Platformer`]: pick a preset, call `update` each frame with your
+//! world as a [`sim::Terrain`] (anything that can say what's solid; [`sim::Level`] is a
+//! ready-made one), and draw `sprite()` at `position()` (or `draw_debug` until there is
+//! art). Underneath, three
 //! layers you can also use on their own:
 //!
 //! - [`sim`]: the movement. A fixed-step, deterministic body: an [`sim::Intent`] in per
@@ -26,16 +28,19 @@
 //! use game_toolkit_platformer::prelude::*;
 //!
 //! struct MyGame {
+//!     level: Level,
 //!     hero: Platformer,
 //! }
 //!
 //! impl Game for MyGame {
 //!     fn init(_ctx: &mut Context) -> Result<Self> {
-//!         Ok(Self { hero: Platformer::new(Level::demo(), Preset::Precise) })
+//!         let level = Level::demo();
+//!         let hero = Platformer::on(&level, Preset::Precise);
+//!         Ok(Self { level, hero })
 //!     }
 //!
 //!     fn update(&mut self, ctx: &mut Context, dt: f32) {
-//!         self.hero.update(&ctx.input, dt);
+//!         self.hero.update(&ctx.input, &mut self.level, dt);
 //!         for event in self.hero.drain_events() {
 //!             match event {
 //!                 Event::Jumped { .. } => { /* a sound */ }
@@ -48,6 +53,7 @@
 //!     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
 //!         let mut p = frame.painter(&mut ctx.gfx);
 //!         p.clear([0.05, 0.04, 0.12, 1.0]);
+//!         self.level.draw_debug(&mut p, [0.0, 0.0], 3.0);
 //!         self.hero.draw_debug(&mut p, [0.0, 0.0], 3.0);
 //!     }
 //! }
@@ -62,7 +68,7 @@
 //! # #[cfg(feature = "toolkit")] {
 //! use game_toolkit_platformer::prelude::*;
 //!
-//! let hero = Platformer::builder(Level::demo())
+//! let hero = Platformer::builder()
 //!     .preset(Preset::Snappy)
 //!     .tune(|t| {
 //!         t.air_jumps = 2;
@@ -70,6 +76,7 @@
 //!     })
 //!     .controls(Scheme::PRECISE)
 //!     .spawn_at(40, 160)
+//!     .respawn(false)
 //!     .build()
 //!     .unwrap();
 //! assert_eq!(hero.world.tuning.air_jumps, 2);
@@ -93,5 +100,10 @@ pub mod prelude {
     #[cfg(feature = "toolkit")]
     pub use crate::controls::{Controls, Scheme};
     pub use crate::platformer::{Builder, Platformer};
-    pub use crate::sim::{Event, Intent, JumpKind, Level, Preset, Tile, Tuning};
+    pub use crate::sim::{Event, Intent, JumpKind, Level, Preset, Rect, Terrain, Tile, Tuning};
 }
+
+/// The README's code samples, compiled as doc tests.
+#[cfg(all(doctest, feature = "toolkit"))]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

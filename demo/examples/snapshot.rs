@@ -11,7 +11,7 @@ use platformer_demo::gfx::font::{self, Font};
 use platformer_demo::gfx::{Canvas, H, Raster, W, palette as pal, png};
 use platformer_demo::render::{Paint, backdrop, mouse};
 use platformer_demo::session::{Overlay, Session};
-use platformer_demo::sim::{Intent, Preset, TILE, World, player};
+use platformer_demo::sim::{Intent, Preset, TILE, player};
 
 /// Steps between onion-skin copies.
 const EVERY: usize = 5;
@@ -27,7 +27,7 @@ struct Script {
     /// Steps to play.
     steps: usize,
     /// The intent at step `k`.
-    intent: fn(usize, &World) -> Intent,
+    intent: fn(usize, &Session) -> Intent,
 }
 
 /// Jump held for `hold` steps from step `at`, otherwise `base`.
@@ -61,8 +61,8 @@ const RIGHT: Intent = Intent {
 };
 
 /// The side (-1, 1) of a wall within 2 px, or 0.
-fn wall_near(w: &World) -> i32 {
-    let r = w.player.rect();
+fn wall_near(w: &Session) -> i32 {
+    let r = w.world.player.rect();
     [-1, 1]
         .into_iter()
         .find(|&s| (1..=2).any(|d| w.level.overlaps(r.shifted(s * d, 0))))
@@ -71,7 +71,7 @@ fn wall_near(w: &World) -> i32 {
 
 /// Bounce between walls: jump off whichever wall is near (once falling or slow), with the
 /// stick `aim` (-1 away from it, 1 toward it); start with a jump at step 5.
-fn bounce(k: usize, w: &World, aim: f32) -> Intent {
+fn bounce(k: usize, w: &Session, aim: f32) -> Intent {
     if k < 5 {
         return Intent::default();
     }
@@ -80,11 +80,12 @@ fn bounce(k: usize, w: &World, aim: f32) -> Intent {
         aim * side as f32
     } else {
         // In flight: keep going away (the facing after a wall jump), or turn back.
-        -aim * w.player.facing as f32
+        -aim * w.world.player.facing as f32
     };
     Intent {
         move_x: x,
-        jump_pressed: k == 5 || (side != 0 && w.player.vy > -30.0 && !w.player.grounded),
+        jump_pressed: k == 5
+            || (side != 0 && w.world.player.vy > -30.0 && !w.world.player.grounded),
         jump_held: true,
         ..Intent::default()
     }
@@ -189,7 +190,7 @@ const SCRIPTS: &[Script] = &[
         at: Some((15 * TILE, LID_A - player::H)),
         steps: 160,
         intent: |k, w| {
-            if k < 5 || w.player.grounded {
+            if k < 5 || w.world.player.grounded {
                 go(-1.0)
             } else {
                 Intent::default()
@@ -353,10 +354,10 @@ fn main() {
             p.y = y;
             p.peak_y = y;
         }
-        let mut canvas = backdrop(&s.world.level);
+        let mut canvas = backdrop(&s.level);
         let mut seen: Vec<String> = Vec::new();
         for k in 0..sc.steps {
-            let i = (sc.intent)(k, &s.world);
+            let i = (sc.intent)(k, &s);
             s.step(&i);
             let state = s.animator.state_name().to_string();
             if seen.last() != Some(&state) {

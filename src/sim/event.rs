@@ -103,6 +103,8 @@ pub enum Event {
         /// Pixels nudged, signed.
         dx: i32,
     },
-    /// The hero fell out of the level and was put back at the spawn.
+    /// The character fell out of the world (the terrain said so).
+    FellOut,
+    /// It was put back at its spawn point (after falling out, unless respawning is off).
     Respawned,
 }

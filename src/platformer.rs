@@ -4,15 +4,17 @@
 //! ```
 //! use game_toolkit_platformer::prelude::*;
 //!
-//! let mut hero = Platformer::builder(Level::demo())
+//! let mut level = Level::demo(); // or your own `Terrain`
+//! let mut hero = Platformer::builder()
 //!     .preset(Preset::Snappy)
 //!     .tune(|t| t.jump_speed = 115.0)
+//!     .spawn_on(&level)
 //!     .build()
 //!     .unwrap();
 //!
-//! // Each frame: an intent (or `hero.update(&ctx.input, dt)` with game-toolkit), then
-//! // whatever happened, and what to draw.
-//! hero.advance(Intent { move_x: 1.0, ..Intent::default() }, 1.0 / 60.0);
+//! // Each frame: an intent (or `hero.update(&ctx.input, &mut level, dt)` with
+//! // game-toolkit), then whatever happened, and what to draw.
+//! hero.advance(Intent { move_x: 1.0, ..Intent::default() }, &mut level, 1.0 / 60.0);
 //! for event in hero.drain_events() {
 //!     let _ = event; // Jumped, Landed, Dashed, ...: sounds, effects
 //! }
@@ -26,12 +28,13 @@ use crate::anim::{AnimEvent, Animator, Driver, GraphSpec, SpecError};
 #[cfg(feature = "toolkit")]
 use crate::controls::{Controls, Scheme};
 use crate::hero::{HeroDriver, spec};
-use crate::sim::{DT, Event, Intent, Level, Preset, Rect, Tuning, World};
+use crate::sim::{DT, Event, Intent, Level, Preset, Rect, Terrain, Tuning, World, player};
 
 /// At most this many fixed steps per frame, so a hitch doesn't spiral.
 const MAX_STEPS: u32 = 8;
 
-/// One playable character on a level.
+/// One playable character. The world around it is yours: pass your [`Terrain`] (or a
+/// [`Level`]) to each update.
 pub struct Platformer {
     /// The simulation: level, body, tuning. Read it for anything the accessors don't cover.
     pub world: World,
@@ -58,16 +61,16 @@ pub struct Platformer {
 
 /// Sets up a [`Platformer`]: preset, tuning, controls, animation graph, spawn point.
 pub struct Builder {
-    /// The level.
-    level: Level,
     /// The movement feel.
     tuning: Tuning,
     /// The preset it came from.
     preset: Option<Preset>,
     /// A custom animation graph, or the built-in one.
     graph: Option<GraphSpec>,
-    /// Where to start instead of the level's spawn tile (hitbox top-left, units).
-    spawn: Option<(i32, i32)>,
+    /// Where to start (hitbox top-left, units).
+    spawn: (i32, i32),
+    /// Put it back at the start after falling out.
+    respawn: bool,
     /// The control scheme, or the preset's.
     #[cfg(feature = "toolkit")]
     scheme: Option<Scheme>,
@@ -101,9 +104,22 @@ impl Builder {
         self
     }
 
-    /// Start with the hitbox's top-left at `x, y` (units) instead of the spawn tile.
+    /// Start with the hitbox's top-left at `x, y` (units).
     pub fn spawn_at(mut self, x: i32, y: i32) -> Self {
-        self.spawn = Some((x, y));
+        self.spawn = (x, y);
+        self
+    }
+
+    /// Start standing on `level`'s spawn tile.
+    pub fn spawn_on(mut self, level: &Level) -> Self {
+        self.spawn = level.spawn_point(player::W, player::H);
+        self
+    }
+
+    /// Whether to put the character back at its start when it falls out of the world
+    /// (default: yes). [`Event::FellOut`] is reported either way, so you can do your own.
+    pub fn respawn(mut self, on: bool) -> Self {
+        self.respawn = on;
         self
     }
 
@@ -119,12 +135,8 @@ impl Builder {
         let graph = self.graph.unwrap_or_else(spec).compile()?;
         let animator = Animator::new(Arc::new(graph));
         let driver = HeroDriver::try_new(&animator.params)?;
-        let mut world = World::new(self.level, self.tuning);
-        if let Some((x, y)) = self.spawn {
-            world.player.x = x;
-            world.player.y = y;
-            world.player.peak_y = y;
-        }
+        let mut world = World::new(self.tuning, self.spawn);
+        world.respawn = self.respawn;
         Ok(Platformer {
             prev: world.player.exact_pos(),
             world,
@@ -145,39 +157,57 @@ impl Builder {
 }
 
 impl Platformer {
-    /// A character on `level` with `preset`'s feel and controls and the built-in animation.
-    pub fn new(level: Level, preset: Preset) -> Self {
-        Self::builder(level)
+    /// A character on `level`'s spawn tile with `preset`'s feel and controls and the
+    /// built-in animation.
+    pub fn on(level: &Level, preset: Preset) -> Self {
+        Self::builder()
             .preset(preset)
+            .spawn_on(level)
             .build()
             .expect("the built-in animation graph fits the built-in driver")
     }
 
-    /// Set one up step by step; starts from the hybrid preset.
-    pub fn builder(level: Level) -> Builder {
+    /// A character with its hitbox's top-left at `x, y` (units), otherwise like
+    /// [`Platformer::on`].
+    pub fn at(x: i32, y: i32, preset: Preset) -> Self {
+        Self::builder()
+            .preset(preset)
+            .spawn_at(x, y)
+            .build()
+            .expect("the built-in animation graph fits the built-in driver")
+    }
+
+    /// Set one up step by step; starts from the hybrid preset at `0, 0`.
+    pub fn builder() -> Builder {
         Builder {
-            level,
             tuning: Preset::Hybrid.tuning(),
             preset: Some(Preset::Hybrid),
             graph: None,
-            spawn: None,
+            spawn: (0, 0),
+            respawn: true,
             #[cfg(feature = "toolkit")]
             scheme: None,
         }
     }
 
     /// Read game-toolkit's input with [`Platformer::controls`] and advance by `dt` seconds
-    /// of frame time. Returns the fixed steps taken.
+    /// of frame time in `terrain`. Returns the fixed steps taken.
     #[cfg(feature = "toolkit")]
-    pub fn update(&mut self, input: &game_toolkit::prelude::Input, dt: f32) -> u32 {
+    pub fn update(
+        &mut self,
+        input: &game_toolkit::prelude::Input,
+        terrain: &mut dyn Terrain,
+        dt: f32,
+    ) -> u32 {
         let intent = self.controls.read(input);
-        self.advance(intent, dt)
+        self.advance(intent, terrain, dt)
     }
 
-    /// Advance by `dt` seconds of frame time with `intent`, in fixed steps of [`DT`].
+    /// Advance by `dt` seconds of frame time with `intent` in `terrain`, in fixed steps of
+    /// [`DT`].
     /// Presses are kept until the next step, so a frame without one doesn't lose them.
     /// Returns the steps taken.
-    pub fn advance(&mut self, intent: Intent, dt: f32) -> u32 {
+    pub fn advance(&mut self, intent: Intent, terrain: &mut dyn Terrain, dt: f32) -> u32 {
         self.latch.jump_pressed |= intent.jump_pressed;
         self.latch.dash_pressed |= intent.dash_pressed;
         self.latch.dive_pressed |= intent.dive_pressed;
@@ -192,15 +222,16 @@ impl Platformer {
                 ..intent
             };
             self.latch = Intent::default();
-            self.step(&i);
+            self.step(&i, terrain);
         }
         n
     }
 
-    /// Exactly one fixed step of [`DT`] with `intent` (for your own clock, replays, tests).
-    pub fn step(&mut self, intent: &Intent) {
+    /// Exactly one fixed step of [`DT`] with `intent` in `terrain` (for your own clock,
+    /// replays, tests).
+    pub fn step(&mut self, intent: &Intent, terrain: &mut dyn Terrain) {
         self.prev = self.world.player.exact_pos();
-        self.world.step(intent);
+        self.world.step(terrain, intent);
         self.events.extend(self.world.events.iter().copied());
         self.driver.drive(&self.world, &mut self.animator.params);
         self.animator.update(DT);
@@ -274,20 +305,23 @@ mod tests {
     #[test]
     fn a_frame_without_a_step_keeps_the_press() {
         // A fresh clock: no leftover time, so a zero-length frame takes no step.
-        let mut hero = Platformer::new(Level::demo(), Preset::Precise);
+        let mut level = Level::demo();
+        let mut hero = Platformer::on(&level, Preset::Precise);
         let press = Intent {
             jump_pressed: true,
             jump_held: true,
             ..Intent::default()
         };
-        assert_eq!(hero.advance(press, 0.0), 0, "a frame without a step");
-        hero.advance(
-            Intent {
-                jump_held: true,
-                ..Intent::default()
-            },
-            1.0 / 60.0,
+        assert_eq!(
+            hero.advance(press, &mut level, 0.0),
+            0,
+            "a frame without a step"
         );
+        let held = Intent {
+            jump_held: true,
+            ..Intent::default()
+        };
+        hero.advance(held, &mut level, 1.0 / 60.0);
         assert!(
             hero.drain_events()
                 .iter()
@@ -298,7 +332,7 @@ mod tests {
 
     #[test]
     fn tune_and_presets_set_the_feel() {
-        let hero = Platformer::builder(Level::demo())
+        let hero = Platformer::builder()
             .preset(Preset::Momentum)
             .tune(|t| t.air_jumps = 2)
             .build()
@@ -317,7 +351,42 @@ mod tests {
             "idle",
             Clip::uniform(Playback::Loop, &[0], 0.1),
         ));
-        let err = Platformer::builder(Level::demo()).graph(tiny).build().err();
+        let err = Platformer::builder().graph(tiny).build().err();
         assert!(matches!(err, Some(SpecError::UnknownParam(_))), "{err:?}");
+    }
+
+    #[test]
+    fn a_closure_is_enough_terrain_and_falling_out_respawns_or_not() {
+        // A floor at y = 100 from x = 0 to 200; beyond it, a drop into nothing.
+        let mut floor = |r: Rect| r.bottom() > 100 && r.x < 200;
+        let mut hero = Platformer::at(20, 88, Preset::Hybrid);
+        for _ in 0..30 {
+            hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
+        }
+        assert!(hero.world.player.grounded, "stands on the closure's floor");
+        assert_eq!(hero.state(), "idle");
+
+        // A terrain that also says where the world ends.
+        struct Pit;
+        impl Terrain for Pit {
+            fn solid(&self, r: Rect) -> bool {
+                r.bottom() > 100 && r.x < 200
+            }
+            fn fell_out(&self, r: Rect) -> bool {
+                r.y > 300
+            }
+        }
+        let mut hero = Platformer::builder()
+            .spawn_at(220, 50)
+            .respawn(false)
+            .build()
+            .unwrap();
+        let mut events = Vec::new();
+        for _ in 0..180 {
+            hero.advance(Intent::default(), &mut Pit, 1.0 / 60.0);
+            events.extend(hero.drain_events());
+        }
+        assert!(events.contains(&Event::FellOut));
+        assert!(!events.contains(&Event::Respawned), "respawning was off");
     }
 }

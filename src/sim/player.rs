@@ -20,7 +20,7 @@ mod jump;
 mod land;
 mod super_dash;
 
-use super::{Event, Intent, JumpKind, Level, Rect, TILE, Tuning};
+use super::{Event, Intent, JumpKind, Rect, Terrain, Tuning};
 
 /// Hitbox width in pixels.
 pub const W: i32 = 6;
@@ -176,12 +176,10 @@ pub struct Player {
 }
 
 impl Player {
-    /// Standing on the level's spawn tile, with everything refilled.
-    pub fn spawn(level: &Level, t: &Tuning) -> Self {
-        let (sx, sy) = level.spawn;
-        let y = (sy + 1) * TILE - H;
+    /// Standing with its hitbox's top-left at `x, y` (units), with everything refilled.
+    pub fn at((x, y): (i32, i32), t: &Tuning) -> Self {
         Self {
-            x: sx * TILE + (TILE - W) / 2,
+            x,
             y,
             rem_x: 0.0,
             rem_y: 0.0,
@@ -235,7 +233,14 @@ impl Player {
     }
 
     /// One step of `dt` seconds (see the module docs for the order).
-    pub fn step(&mut self, level: &Level, i: &Intent, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
+    pub fn step(
+        &mut self,
+        level: &dyn Terrain,
+        i: &Intent,
+        t: &Tuning,
+        dt: f32,
+        ev: &mut Vec<Event>,
+    ) {
         let move_x = if self.force_move > 0.0 {
             self.force_dir as f32
         } else {
@@ -284,11 +289,6 @@ impl Player {
         self.land(level, move_x, landing_vy, jumped, t, ev);
         self.look(i, move_x, dt);
         self.run_roll(i, t, ev);
-
-        if self.y > level.floor_y() + 4 * TILE {
-            *self = Self::spawn(level, t);
-            ev.push(Event::Respawned);
-        }
     }
 
     /// Open or close the glide, reporting the change.
@@ -443,7 +443,7 @@ impl Player {
 
     /// Horizontal speed: rolls keep their speed, recoveries brake, dashes, dives and climbs
     /// set their own, otherwise accelerate toward the stick.
-    fn run(&mut self, level: &Level, move_x: f32, sprint: bool, t: &Tuning, dt: f32) {
+    fn run(&mut self, level: &dyn Terrain, move_x: f32, sprint: bool, t: &Tuning, dt: f32) {
         let side = self.wall_slide;
         if self.mode == Mode::Normal
             && side != 0
@@ -503,7 +503,7 @@ impl Player {
     /// rolling bodies fall; the other modes set their own vertical speed.
     fn fall(
         &mut self,
-        level: &Level,
+        level: &dyn Terrain,
         i: &Intent,
         move_x: f32,
         t: &Tuning,
@@ -577,8 +577,8 @@ impl Player {
     }
 
     /// Whether a solid wall touches the hitbox on `side` (-1 left, 1 right).
-    pub fn wall(&self, level: &Level, side: i32) -> bool {
-        side != 0 && level.overlaps(self.rect().shifted(side, 0))
+    pub fn wall(&self, level: &dyn Terrain, side: i32) -> bool {
+        side != 0 && level.solid(self.rect().shifted(side, 0))
     }
 
     /// Forget any jump in progress: no sustain, no cut.

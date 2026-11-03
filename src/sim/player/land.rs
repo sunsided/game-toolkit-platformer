@@ -2,14 +2,14 @@
 //! downward dash), walking off ledges, and the airtime's peak.
 
 use super::{Mode, Player};
-use crate::sim::{Event, Level, Tuning};
+use crate::sim::{Event, Terrain, Tuning};
 
 impl Player {
     /// Check the ground under the hero after moving. `landing_vy` is the vertical speed
     /// before the floor stopped it; `jumped` whether the hero left the ground by choice.
     pub(super) fn land(
         &mut self,
-        level: &Level,
+        level: &dyn Terrain,
         move_x: f32,
         landing_vy: f32,
         jumped: bool,

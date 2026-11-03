@@ -81,6 +81,10 @@ pub struct Keys {
 pub struct Session {
     /// The simulation.
     pub world: World,
+    /// The level the hero moves through (its crystals and boxes change as she plays).
+    pub level: Level,
+    /// The level as it was at the start, for a reset.
+    pub start: Level,
     /// The hero's animation.
     pub animator: Animator,
     /// Sim facts to animation parameters.
@@ -119,13 +123,15 @@ impl Session {
 
     /// A session on `level` with `tuning`.
     pub fn with(level: Level, tuning: Tuning) -> Self {
-        let world = World::new(level, tuning);
-        let foliage = Foliage::grow(&world.level);
+        let world = World::on(&level, tuning);
+        let foliage = Foliage::grow(&level);
         let animator = Animator::new(graph());
         let driver = HeroDriver::new(&animator.params);
         Self {
             prev: world.player.exact_pos(),
             world,
+            start: level.clone(),
+            level,
             animator,
             driver,
             clock: Clock::default(),
@@ -154,7 +160,7 @@ impl Session {
             self.overlay = self.overlay.next();
         }
         if keys.reset {
-            let (level, tuning) = (self.world.level.clone(), self.world.tuning);
+            let (level, tuning) = (self.start.clone(), self.world.tuning);
             *self = Self {
                 overlay: self.overlay,
                 clock: self.clock.clone(),
@@ -196,7 +202,7 @@ impl Session {
     pub fn step(&mut self, i: &Intent) {
         self.prev = self.world.player.exact_pos();
         self.last_intent = *i;
-        self.world.step(i);
+        self.world.step(&mut self.level, i);
         self.driver.drive(&self.world, &mut self.animator.params);
         self.animator.update(DT);
         let p = &self.world.player;

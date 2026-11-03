@@ -2,6 +2,44 @@
 
 use super::*;
 
+/// A character in a level, stepped together: the tests' shorthand for a `World` plus its
+/// `Level` as the terrain.
+#[derive(Clone)]
+struct Sim {
+    /// The character.
+    world: World,
+    /// Its terrain.
+    level: Level,
+}
+
+impl Sim {
+    /// A character on `level`'s spawn tile with `tuning`.
+    fn new(level: Level, tuning: Tuning) -> Self {
+        Self {
+            world: World::on(&level, tuning),
+            level,
+        }
+    }
+
+    /// One step with `i`.
+    fn step(&mut self, i: &Intent) {
+        self.world.step(&mut self.level, i);
+    }
+}
+
+impl std::ops::Deref for Sim {
+    type Target = World;
+    fn deref(&self) -> &World {
+        &self.world
+    }
+}
+
+impl std::ops::DerefMut for Sim {
+    fn deref_mut(&mut self) -> &mut World {
+        &mut self.world
+    }
+}
+
 /// A closed room 24 tiles wide and 16 high, the spawn on the floor at the left; `extra`
 /// rows (tile row, string) overwrite parts of it.
 fn room(extra: &[(usize, usize, &str)]) -> Level {
@@ -31,12 +69,12 @@ fn room(extra: &[(usize, usize, &str)]) -> Level {
 }
 
 /// A world in `level` with default tuning.
-fn world(level: Level) -> World {
-    World::new(level, Tuning::default())
+fn world(level: Level) -> Sim {
+    Sim::new(level, Tuning::default())
 }
 
 /// Step `n` times with `i`, collecting every event.
-fn run(w: &mut World, i: Intent, n: usize) -> Vec<Event> {
+fn run(w: &mut Sim, i: Intent, n: usize) -> Vec<Event> {
     let mut all = Vec::new();
     for _ in 0..n {
         w.step(&i);
@@ -46,7 +84,7 @@ fn run(w: &mut World, i: Intent, n: usize) -> Vec<Event> {
 }
 
 /// Press jump once (holding), then hold it for `hold` steps, then release for `rest`.
-fn jump(w: &mut World, hold: usize, rest: usize) -> Vec<Event> {
+fn jump(w: &mut Sim, hold: usize, rest: usize) -> Vec<Event> {
     let press = Intent {
         jump_pressed: true,
         jump_held: true,
@@ -76,7 +114,7 @@ fn jumps(ev: &[Event]) -> Vec<(JumpKind, bool)> {
 }
 
 /// The hero's highest point (smallest y) over the events of a run, by stepping it.
-fn peak(w: &mut World, hold: usize) -> i32 {
+fn peak(w: &mut Sim, hold: usize) -> i32 {
     let start = w.player.y;
     let mut top = start;
     let press = Intent {
@@ -114,7 +152,7 @@ fn a_cloned_world_plays_out_identically() {
     for i in &script {
         a.step(i);
         b.step(i);
-        assert_eq!(a.events, b.events);
+        assert_eq!(a.world.events, b.events);
     }
     assert_eq!(a.player, b.player);
 }
@@ -223,7 +261,7 @@ fn one_air_jump_until_landing() {
 }
 
 /// A world with the hero standing on a shelf `rows` tiles above the floor.
-fn on_shelf(rows: i32) -> World {
+fn on_shelf(rows: i32) -> Sim {
     let y = 15 - rows;
     let mut w = world(room(&[(y as usize, 1, "######")]));
     w.player.x = 4 * TILE;
@@ -233,7 +271,7 @@ fn on_shelf(rows: i32) -> World {
 }
 
 /// Walk right off the shelf with `move_x` held after leaving it, until landed.
-fn drop_off(w: &mut World, move_x: f32, extra: Intent) -> Vec<Event> {
+fn drop_off(w: &mut Sim, move_x: f32, extra: Intent) -> Vec<Event> {
     let mut ev = Vec::new();
     while !ev.contains(&Event::LeftGround) {
         ev.extend(run(
@@ -469,9 +507,9 @@ fn crystals_recharge_in_the_air_and_come_back() {
     );
     let ev = run(&mut w, Intent::default(), 30);
     assert!(ev.contains(&Event::Recharged { crystal: true }), "{ev:?}");
-    assert!(!w.crystals[0].ready());
+    assert!(!w.level.crystals[0].ready());
     run(&mut w, Intent::default(), 400);
-    assert!(w.crystals[0].ready());
+    assert!(w.level.crystals[0].ready());
 }
 
 #[test]
@@ -552,7 +590,7 @@ fn running_out_of_stamina_lets_go() {
         tired_stamina: 0.0,
         ..Tuning::default()
     };
-    let mut w = World::new(
+    let mut w = Sim::new(
         room(&(1..15).map(|y| (y, 10, "#")).collect::<Vec<_>>()),
         firm,
     );
@@ -631,8 +669,8 @@ fn the_head_slips_past_ceiling_corners() {
 
 /// A world in a room with a wall column at tile x 10 over `rows`, the hero against it
 /// and in the air at `y` px, with `tuning`.
-fn at_wall(rows: std::ops::Range<usize>, y: i32, tuning: Tuning) -> World {
-    let mut w = World::new(
+fn at_wall(rows: std::ops::Range<usize>, y: i32, tuning: Tuning) -> Sim {
+    let mut w = Sim::new(
         room(&rows.map(|r| (r, 10, "#")).collect::<Vec<_>>()),
         tuning,
     );
@@ -766,7 +804,7 @@ fn the_wall_stick_turns_away_and_jump_into_a_wall_jump() {
 
 #[test]
 fn presets_switch_abilities_off() {
-    let mut w = World::new(room(&[]), Preset::Momentum.tuning());
+    let mut w = Sim::new(room(&[]), Preset::Momentum.tuning());
     jump(&mut w, 10, 0);
     let ev = run(
         &mut w,
@@ -787,7 +825,7 @@ fn presets_switch_abilities_off() {
         "{ev:?}"
     );
 
-    let mut w = World::new(room(&[]), Preset::Snappy.tuning());
+    let mut w = Sim::new(room(&[]), Preset::Snappy.tuning());
     jump(&mut w, 10, 0);
     let ev = run(
         &mut w,
@@ -904,7 +942,7 @@ fn holding_up_or_down_standing_still_looks() {
 }
 
 /// A room with a block on the floor at tile x 6, the hero standing left of it.
-fn with_block() -> World {
+fn with_block() -> Sim {
     let mut w = world(room(&[(14, 6, "B")]));
     w.player.x = 6 * TILE - 2 - player::W - 4;
     run(&mut w, Intent::default(), 3);
@@ -914,7 +952,7 @@ fn with_block() -> World {
 #[test]
 fn walking_into_a_block_pushes_it_slowly() {
     let mut w = with_block();
-    let start = w.blocks[0].x;
+    let start = w.level.blocks[0].x;
     run(
         &mut w,
         Intent {
@@ -923,7 +961,7 @@ fn walking_into_a_block_pushes_it_slowly() {
         },
         120,
     );
-    let moved = w.blocks[0].x - start;
+    let moved = w.level.blocks[0].x - start;
     assert!(moved > 20, "pushed {moved}");
     assert_eq!(w.player.shove, Shove::Push { side: 1 });
     assert!(w.player.vx <= Tuning::default().push_speed + 0.5);
@@ -941,7 +979,7 @@ fn grabbing_a_block_holds_it_and_walking_away_pulls_it() {
         },
         20,
     );
-    let start = w.blocks[0].x;
+    let start = w.level.blocks[0].x;
     let grab = Intent {
         grab: true,
         ..Intent::default()
@@ -964,9 +1002,9 @@ fn grabbing_a_block_holds_it_and_walking_away_pulls_it() {
     assert_eq!(w.player.shove, Shove::Pull { side: 1 });
     assert_eq!(w.player.facing, 1, "still facing the block");
     assert!(
-        w.blocks[0].x < start - 12,
+        w.level.blocks[0].x < start - 12,
         "pulled from {start} to {}",
-        w.blocks[0].x
+        w.level.blocks[0].x
     );
     assert!(w.player.wall(&w.level, 1), "the block stays at the hand");
 }
@@ -985,8 +1023,8 @@ fn blocks_fall_off_ledges_and_can_be_stood_on() {
         },
         200,
     );
-    assert!(w.blocks[0].grounded);
-    assert_eq!(w.blocks[0].y, 15 * TILE - block::SIZE, "on the floor");
+    assert!(w.level.blocks[0].grounded);
+    assert_eq!(w.level.blocks[0].y, 15 * TILE - block::SIZE, "on the floor");
     let mut w = world(room(&[(14, 4, "B")]));
     jump(&mut w, 30, 0);
     run(
@@ -1000,7 +1038,7 @@ fn blocks_fall_off_ledges_and_can_be_stood_on() {
     run(&mut w, Intent::default(), 90);
     assert_eq!(
         w.player.y + player::H,
-        w.blocks[0].y,
+        w.level.blocks[0].y,
         "standing on the block"
     );
 }
@@ -1085,7 +1123,7 @@ fn the_stick_aims_wall_jumps() {
 fn a_wall_gives_the_air_jump_back() {
     // From the floor left of a wall: jump, spend the air jump, slide down the wall, jump
     // off it, and air-jump again without landing.
-    let mut w = World::new(
+    let mut w = Sim::new(
         room(&(1..15).map(|r| (r, 10, "#")).collect::<Vec<_>>()),
         Tuning::default(),
     );
@@ -1196,7 +1234,7 @@ fn blocks_stick_before_they_budge() {
             ..Intent::default()
         });
     }
-    let start = w.blocks[0].x;
+    let start = w.level.blocks[0].x;
     let mut pushed = 0;
     for _ in 0..24 {
         // Under the 0.25 s breakaway: strained, not moved.
@@ -1204,7 +1242,7 @@ fn blocks_stick_before_they_budge() {
             move_x: 1.0,
             ..Intent::default()
         });
-        pushed = w.blocks[0].x - start;
+        pushed = w.level.blocks[0].x - start;
     }
     let t = Tuning::default();
     assert!(w.effort > 0.0 && w.effort < t.push_breakaway + 0.02);
@@ -1217,7 +1255,7 @@ fn blocks_stick_before_they_budge() {
         },
         90,
     );
-    assert!(w.blocks[0].x - start > 15, "then it slides");
+    assert!(w.level.blocks[0].x - start > 15, "then it slides");
     // Letting go resets the effort: it sticks again.
     run(&mut w, Intent::default(), 2);
     assert_eq!(w.effort, 0.0);
@@ -1226,7 +1264,7 @@ fn blocks_stick_before_they_budge() {
 #[test]
 fn holding_a_jump_pressed_in_the_air_glides() {
     let t = Preset::Drifter.tuning();
-    let mut w = World::new(room(&[]), t);
+    let mut w = Sim::new(room(&[]), t);
     // A ground jump held through its apex does not glide: that's hangtime.
     jump(&mut w, 25, 0);
     let ev = run(
@@ -1331,7 +1369,7 @@ fn a_block_rumbles_while_it_sticks() {
 fn sprinting_raises_the_top_speed_where_the_preset_has_it() {
     /// Top speed after a second of running, sprinting or not, with `t`.
     fn top(t: Tuning, sprint: bool) -> f32 {
-        let mut w = World::new(room(&[]), t);
+        let mut w = Sim::new(room(&[]), t);
         run(
             &mut w,
             Intent {
@@ -1355,7 +1393,7 @@ fn sprinting_raises_the_top_speed_where_the_preset_has_it() {
 }
 
 /// Hold super dash for `steps` steps, then let go; the events.
-fn charge(w: &mut World, steps: usize) -> Vec<Event> {
+fn charge(w: &mut Sim, steps: usize) -> Vec<Event> {
     let mut ev = run(
         w,
         Intent {
@@ -1432,7 +1470,7 @@ fn a_super_dash_charged_on_a_wall_launches_away_from_it() {
     let ev = charge(&mut w, 110);
     assert!(ev.contains(&Event::SuperDashStarted { dir: -1 }), "{ev:?}");
     assert!(w.player.y - y <= 2, "held on the wall while charging");
-    let mut w = World::new(room(&[]), Preset::Precise.tuning());
+    let mut w = Sim::new(room(&[]), Preset::Precise.tuning());
     run(&mut w, Intent::default(), 3);
     let ev = charge(&mut w, 110);
     assert!(

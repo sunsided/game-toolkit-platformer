@@ -6,7 +6,7 @@
 //! Wall slides and wall jumps don't need a grab (see `fall` and `jump`).
 
 use super::{Mode, Player};
-use crate::sim::{Event, Intent, Level, Rect, Tuning};
+use crate::sim::{Event, Intent, Rect, Terrain, Tuning};
 
 /// Rows at the top of the hitbox that must still touch the wall to keep climbing up;
 /// above that the hero hops over.
@@ -18,7 +18,7 @@ impl Player {
     /// Grab, climb, hop or let go.
     pub(super) fn climb(
         &mut self,
-        level: &Level,
+        level: &dyn Terrain,
         i: &Intent,
         t: &Tuning,
         dt: f32,
@@ -54,7 +54,14 @@ impl Player {
     }
 
     /// One step on the wall.
-    fn hold_on(&mut self, level: &Level, i: &Intent, t: &Tuning, dt: f32, ev: &mut Vec<Event>) {
+    fn hold_on(
+        &mut self,
+        level: &dyn Terrain,
+        i: &Intent,
+        t: &Tuning,
+        dt: f32,
+        ev: &mut Vec<Event>,
+    ) {
         let up = i.move_y < -0.5;
         let down = i.move_y > 0.5;
         let head = Rect {
@@ -66,7 +73,7 @@ impl Player {
             ev.push(Event::LetGo);
             return;
         }
-        if up && !level.overlaps(head) {
+        if up && !level.solid(head) {
             self.mode = Mode::Normal;
             self.vy = -t.climb_hop_speed;
             self.vx = self.facing as f32 * t.run_speed * 0.6;

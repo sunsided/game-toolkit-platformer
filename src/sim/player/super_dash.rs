@@ -4,7 +4,7 @@
 //! jumping during the charge cancels it too (see `jump`).
 
 use super::{Mode, Player};
-use crate::sim::{Event, Intent, Level, Tuning};
+use crate::sim::{Event, Intent, Terrain, Tuning};
 
 /// Speed knocked back off the wall a super dash hits, sideways and up.
 const BONK: (f32, f32) = (60.0, 90.0);
@@ -13,7 +13,7 @@ impl Player {
     /// Start, keep, launch or cancel a super dash.
     pub(super) fn super_dash(
         &mut self,
-        level: &Level,
+        level: &dyn Terrain,
         i: &Intent,
         t: &Tuning,
         ev: &mut Vec<Event>,

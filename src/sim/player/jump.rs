@@ -5,7 +5,7 @@
 //! platform drops through it instead.
 
 use super::{Mode, Player};
-use crate::sim::{Event, Intent, JumpKind, Level, Tuning};
+use crate::sim::{Event, Intent, JumpKind, Terrain, Tuning};
 
 impl Player {
     /// Turn a waiting jump press into a jump when one is possible. Falling just above the
@@ -13,7 +13,7 @@ impl Player {
     /// Returns whether the hero left the ground by choice (jump or drop-through).
     pub(super) fn jump(
         &mut self,
-        level: &Level,
+        level: &dyn Terrain,
         i: &Intent,
         move_x: f32,
         t: &Tuning,
@@ -113,15 +113,15 @@ impl Player {
     }
 
     /// Standing on a one-way platform with no solid ground under the feet.
-    fn on_platform_only(&self, level: &Level) -> bool {
+    fn on_platform_only(&self, level: &dyn Terrain) -> bool {
         let r = self.rect();
-        level.on_platform(r) && !level.overlaps(r.shifted(0, 1))
+        level.platform(r) && !level.solid(r.shifted(0, 1))
     }
 
     /// The side of a wall within `reach` pixels (facing side first), for wall jumps.
-    fn wall_near(&self, level: &Level, reach: i32) -> Option<i32> {
+    fn wall_near(&self, level: &dyn Terrain, reach: i32) -> Option<i32> {
         [self.facing, -self.facing]
             .into_iter()
-            .find(|&side| (1..=reach).any(|d| level.overlaps(self.rect().shifted(side * d, 0))))
+            .find(|&side| (1..=reach).any(|d| level.solid(self.rect().shifted(side * d, 0))))
     }
 }

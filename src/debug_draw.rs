@@ -1,23 +1,22 @@
-//! A debug look with game-toolkit's painter: the level as blocks, the character as a box
-//! colored by its animation state, the state's name above it. Enough to play and tune
-//! before there is any art.
+//! A debug look with game-toolkit's painter: a [`Level`] as blocks, the character as a
+//! box colored by its animation state with the state's name above it. Enough to play and
+//! tune before there is any art.
 
 use game_toolkit::prelude::*;
 
 use crate::Platformer;
-use crate::sim::{TILE, Tile};
+use crate::sim::{Level, TILE, Tile};
 
-impl Platformer {
-    /// Draw the level and the character with `p`, the level's top-left at `origin`
-    /// (window pixels), `scale` window pixels per unit.
+impl Level {
+    /// Draw the tiles, the dash refills that are there and the boxes with `p`, the level's
+    /// top-left at `origin` (window pixels), `scale` window pixels per unit.
     pub fn draw_debug(&self, p: &mut Painter<'_>, origin: [f32; 2], scale: f32) {
         let at = |x: f32, y: f32| [origin[0] + x * scale, origin[1] + y * scale];
-        let level = &self.world.level;
         let t = TILE as f32;
-        for ty in 0..level.h {
-            for tx in 0..level.w {
+        for ty in 0..self.h {
+            for tx in 0..self.w {
                 let (x, y) = (tx as f32 * t, ty as f32 * t);
-                match level.tile(tx, ty) {
+                match self.tile(tx, ty) {
                     Tile::Empty => {}
                     Tile::Solid => {
                         p.rect(at(x, y), [t * scale, t * scale], Color::rgb8(74, 64, 100));
@@ -32,7 +31,7 @@ impl Platformer {
                 }
             }
         }
-        for c in self.world.crystals.iter().filter(|c| c.ready()) {
+        for c in self.crystals.iter().filter(|c| c.ready()) {
             let a = c.area;
             p.rect(
                 at(a.x as f32 + 2.0, a.y as f32 + 2.0),
@@ -40,7 +39,7 @@ impl Platformer {
                 Color::rgb8(253, 196, 67),
             );
         }
-        for b in &self.world.blocks {
+        for b in &self.blocks {
             let r = b.rect();
             p.rect(
                 at(r.x as f32, r.y as f32),
@@ -48,11 +47,22 @@ impl Platformer {
                 Color::rgb8(154, 106, 58),
             );
         }
+    }
+}
+
+impl Platformer {
+    /// Draw the character as a box colored by its animation state, an eye on the side it
+    /// faces and the state's name above, with `p`: the world's origin at `origin` (window
+    /// pixels), `scale` window pixels per unit.
+    pub fn draw_debug(&self, p: &mut Painter<'_>, origin: [f32; 2], scale: f32) {
+        let at = |x: f32, y: f32| [origin[0] + x * scale, origin[1] + y * scale];
         let (x, y) = self.position();
         let r = self.hitbox();
-        let color = state_color(self.state());
-        p.rect(at(x, y), [r.w as f32 * scale, r.h as f32 * scale], color);
-        // An eye on the facing side.
+        p.rect(
+            at(x, y),
+            [r.w as f32 * scale, r.h as f32 * scale],
+            state_color(self.state()),
+        );
         let eye_x = if self.facing() > 0 {
             x + r.w as f32 - 2.0
         } else {

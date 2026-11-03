@@ -83,7 +83,7 @@ impl Game for App {
     /// Start on the demo level and upload its backdrop.
     fn init(ctx: &mut Context) -> Result<Self> {
         let session = Session::new();
-        let backdrop = render::backdrop(&session.world.level);
+        let backdrop = render::backdrop(&session.level);
         let stars = render::twinkles(&backdrop);
         let mut rgba = vec![0; (W * H * 4) as usize];
         backdrop.to_rgba(&mut rgba);
@@ -122,7 +122,7 @@ impl Game for App {
     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
         if self.session.skin != self.drawn_for {
             // F3: the art's night scene, or the plain diagnostic backdrop.
-            let level = &self.session.world.level;
+            let level = &self.session.level;
             let canvas = match self.session.skin {
                 Skin::Mouse => render::backdrop(level),
                 Skin::Blocks => render::plain(level),

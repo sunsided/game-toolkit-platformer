@@ -19,16 +19,19 @@ use game_toolkit::prelude::*;
 use game_toolkit_platformer::prelude::*;
 
 struct MyGame {
+    level: Level,
     hero: Platformer,
 }
 
 impl Game for MyGame {
     fn init(_ctx: &mut Context) -> Result<Self> {
-        Ok(Self { hero: Platformer::new(Level::demo(), Preset::Precise) })
+        let level = Level::demo();
+        let hero = Platformer::on(&level, Preset::Precise);
+        Ok(Self { level, hero })
     }
 
     fn update(&mut self, ctx: &mut Context, dt: f32) {
-        self.hero.update(&ctx.input, dt);
+        self.hero.update(&ctx.input, &mut self.level, dt);
         for event in self.hero.drain_events() {
             match event {
                 Event::Jumped { .. } => { /* a sound */ }
@@ -41,6 +44,7 @@ impl Game for MyGame {
     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
         let mut p = frame.painter(&mut ctx.gfx);
         p.clear([0.05, 0.04, 0.12, 1.0]);
+        self.level.draw_debug(&mut p, [0.0, 0.0], 3.0);
         self.hero.draw_debug(&mut p, [0.0, 0.0], 3.0);
     }
 }
@@ -53,15 +57,20 @@ That's a playable character (this code is also a doc test, so it compiles): keyb
 Everything goes through the builder:
 
 ```rust
-let hero = Platformer::builder(Level::demo())
+# use game_toolkit_platformer::prelude::*;
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let hero = Platformer::builder()
     .preset(Preset::Snappy)                // feel and controls
     .tune(|t| {                            // then adjust any number
         t.air_jumps = 2;
         t.dash_speed = 260.0;
     })
     .controls(Scheme::PRECISE)             // or another control scheme
-    .spawn_at(40, 160)
+    .spawn_at(40, 160)                     // or .spawn_on(&level), its `P`
+    .respawn(false)                        // report falling out, don't reset
     .build()?;
+# Ok(())
+# }
 ```
 
 | Preset | Feel | Tuned toward | Controls (keyboard / pad) |
@@ -74,7 +83,18 @@ let hero = Platformer::builder(Level::demo())
 
 The presets lean toward each game's feel by ear; they are not measured copies. `Tuning` has every number and ability switch (about 80, each documented), and `set_preset` switches the feel at runtime.
 
-Levels are tile grids: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `B` box, `P` spawn), so a tilemap converts in a few lines.
+## Your world
+
+The character moves through anything that implements `Terrain`, and the only required method is `solid(rect)`, so a closure already counts:
+
+```rust
+# use game_toolkit_platformer::prelude::*;
+let mut floor = |r: Rect| r.bottom() > 200;
+let mut hero = Platformer::at(40, 100, Preset::Snappy);
+hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
+```
+
+The other methods are optional: one-way platforms, dash refills, pushable boxes, falling out of the world, and a per-step `update` for anything that moves. `Level` is a ready-made `Terrain` with all of them: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `B` box, `P` spawn), `Level::from_fn` builds one from your tilemap.
 
 ## Drawing your character
 

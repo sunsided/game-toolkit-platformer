@@ -82,10 +82,10 @@ pub fn plain(level: &Level) -> Canvas {
                 Tile::Solid => {
                     c.fill_rect(x, y, t, t, pal::STONE);
                     c.fill_rect(x, y + t - 2, t, 2, pal::STONE_DK);
-                    if !level.solid(tx, ty - 1) {
+                    if !level.solid_tile(tx, ty - 1) {
                         c.fill_rect(x, y, t, 1, pal::STONE_LT);
                     }
-                    if !level.solid(tx - 1, ty) {
+                    if !level.solid_tile(tx - 1, ty) {
                         c.fill_rect(x, y, 1, t, pal::STONE_DK);
                     }
                 }
@@ -371,10 +371,10 @@ fn tiles(c: &mut Canvas, level: &Level) {
 fn rock(c: &mut Canvas, level: &Level, tx: i32, ty: i32, x: i32, y: i32, t: i32) {
     // Pixels per 8 of tile, so the details keep their proportions at any `K`.
     let q = (t / 8).max(1);
-    let open_up = !level.solid(tx, ty - 1);
-    let open_down = !level.solid(tx, ty + 1);
-    let open_left = !level.solid(tx - 1, ty);
-    let open_right = !level.solid(tx + 1, ty);
+    let open_up = !level.solid_tile(tx, ty - 1);
+    let open_down = !level.solid_tile(tx, ty + 1);
+    let open_left = !level.solid_tile(tx - 1, ty);
+    let open_right = !level.solid_tile(tx + 1, ty);
     for py in 0..t {
         for px in 0..t {
             let (gx, gy) = (x + px, y + py);

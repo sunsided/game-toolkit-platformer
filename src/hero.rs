@@ -11,11 +11,12 @@
 //! use game_toolkit_platformer::hero::{HeroDriver, graph};
 //! use game_toolkit_platformer::sim::{DT, Intent, Level, Tuning, World};
 //!
-//! let mut world = World::new(Level::demo(), Tuning::default());
+//! let mut level = Level::demo();
+//! let mut world = World::on(&level, Tuning::default());
 //! let mut animator = Animator::new(graph());
 //! let mut driver = HeroDriver::new(&animator.params);
 //! for _ in 0..30 {
-//!     world.step(&Intent { move_x: 1.0, ..Intent::default() });
+//!     world.step(&mut level, &Intent { move_x: 1.0, ..Intent::default() });
 //!     driver.drive(&world, &mut animator.params);
 //!     animator.update(DT);
 //! }

@@ -1,13 +1,18 @@
 //! [`Block`]: a box the hero can push, pull and stand on. It falls, and collides with
 //! tiles, other blocks and the hero.
 
-use super::{Level, Rect, TILE, Tuning};
+use super::{Level, Rect, TILE};
+
+/// How fast a box falls, units/s².
+const GRAVITY: f32 = 900.0;
+/// The fastest a box falls, units/s.
+const MAX_FALL: f32 = 160.0;
 
 /// Block size in pixels (square).
 pub const SIZE: i32 = 12;
 
 /// A pushable box.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Block {
     /// Left edge, pixels.
     pub x: i32,
@@ -75,7 +80,7 @@ impl Block {
     }
 
     /// Gravity and falling for one step: lands on tiles, platforms, blocks and the hero.
-    pub fn fall(&mut self, level: &Level, me: usize, hero: Rect, t: &Tuning, dt: f32) {
+    pub fn fall(&mut self, level: &Level, me: usize, hero: Rect, dt: f32) {
         if self.rests(level, me, hero) {
             self.grounded = true;
             self.vy = 0.0;
@@ -83,7 +88,7 @@ impl Block {
             return;
         }
         self.grounded = false;
-        self.vy = (self.vy + t.gravity * dt).min(t.max_fall);
+        self.vy = (self.vy + GRAVITY * dt).min(MAX_FALL);
         self.rem_y += self.vy * dt;
         let n = self.rem_y.round() as i32;
         self.rem_y -= n as f32;

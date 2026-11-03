@@ -4,7 +4,7 @@
 [game-toolkit](https://github.com/sunsided/game-toolkit) 0.10 (fluid, snappy movement with
 presets tuned toward the feel of Celeste, Hollow Knight, Silksong and Super Meat Boy, plus an animation state
 graph that follows it). The library is the product; `demo/` is its test bench. Keep using it
-plug and play for game-toolkit users: `Platformer::new(level, preset)`, `update(&input, dt)`,
+plug and play for game-toolkit users: `Platformer::on(&level, preset)`, `update(&input, &mut level, dt)`,
 draw `sprite()` at `position()`. Design docs live in `docs/`; keep them in sync when behavior
 changes (`docs/roadmap.md` tracks what's next). Keep the README short; details go in `docs/`.
 
@@ -21,7 +21,9 @@ default):
   abilities in a fixed order; each ability is its own module in `sim/player/`. Every feel
   number and ability switch lives in `sim/tuning.rs` (`Tuning`, `Preset`). Movement emits
   `Event`s; nothing in `sim` knows about animation. `sim/level.rs` holds the demo level
-  (keep its stairs within a plain held jump; a test checks).
+  (keep its stairs within a plain held jump; a test checks). `sim/terrain.rs`: the `Terrain`
+  trait the world steps through (only `solid` required; closures count; `Level` implements
+  all of it, crystals and boxes included).
 - `anim/`: the animation controller, independent of any game. `Params` (bools, floats,
   triggers with TTL), `Clip`, `Cond`, `GraphSpec` (by name, `Cow<'static, str>`) compiled
   into a validated `Graph`, `Animator`, `Driver`. Keep it free of `sim`/`hero` imports.

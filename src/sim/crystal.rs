@@ -1,8 +1,8 @@
 //! [`Crystal`]: a dash refill floating in the air; used up on touch, back after a while.
 
-use super::{Rect, TILE, Tuning};
+use super::{Rect, TILE};
 
-/// A dash crystal.
+/// A dash refill.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Crystal {
     /// The area that collects it (its tile).
@@ -12,7 +12,7 @@ pub struct Crystal {
 }
 
 impl Crystal {
-    /// A crystal filling tile `tx, ty`.
+    /// A refill filling tile `tx, ty`.
     pub fn at((tx, ty): (i32, i32)) -> Self {
         Self {
             area: Rect {
@@ -25,21 +25,8 @@ impl Crystal {
         }
     }
 
-    /// Whether the crystal is there to be taken.
+    /// Whether it is there to be taken.
     pub fn ready(&self) -> bool {
         self.cooldown <= 0.0
-    }
-
-    /// Advance its clock by `dt`; if it is there, touches `body` and the hero `needs` a
-    /// dash, use it up and return true. A hero with full dashes passes through without
-    /// wasting it.
-    pub fn collect(&mut self, body: Rect, dt: f32, needs: bool, t: &Tuning) -> bool {
-        self.cooldown = (self.cooldown - dt).max(0.0);
-        let touches = body.intersects(self.area);
-        if self.ready() && touches && needs {
-            self.cooldown = t.crystal_respawn;
-            return true;
-        }
-        false
     }
 }

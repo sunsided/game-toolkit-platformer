@@ -4,17 +4,19 @@
 use game_toolkit::prelude::*;
 use game_toolkit_platformer::prelude::*;
 
-/// The game: one character.
+/// The game: a level and one character.
 struct Minimal {
+    /// The level: any `Terrain` would do.
+    level: Level,
     /// The character.
     hero: Platformer,
 }
 
 impl Game for Minimal {
     fn init(_ctx: &mut Context) -> Result<Self> {
-        Ok(Self {
-            hero: Platformer::new(Level::demo(), Preset::Precise),
-        })
+        let level = Level::demo();
+        let hero = Platformer::on(&level, Preset::Precise);
+        Ok(Self { level, hero })
     }
 
     fn update(&mut self, ctx: &mut Context, dt: f32) {
@@ -25,7 +27,7 @@ impl Game for Minimal {
             let next = self.hero.preset().unwrap_or(Preset::Hybrid).next();
             self.hero.set_preset(next);
         }
-        self.hero.update(&ctx.input, dt);
+        self.hero.update(&ctx.input, &mut self.level, dt);
         for event in self.hero.drain_events() {
             if let Event::Landed { drop, .. } = event
                 && drop > 48
@@ -39,6 +41,7 @@ impl Game for Minimal {
     fn render(&mut self, ctx: &mut Context, frame: &mut Frame) {
         let mut p = frame.painter(&mut ctx.gfx);
         p.clear([0.05, 0.04, 0.12, 1.0]);
+        self.level.draw_debug(&mut p, [0.0, 0.0], 3.0);
         self.hero.draw_debug(&mut p, [0.0, 0.0], 3.0);
         let preset = self.hero.preset().map_or("custom", Preset::name);
         p.text(

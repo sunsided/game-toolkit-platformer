@@ -40,7 +40,7 @@ pub fn scene(r: &mut dyn Raster, s: &Session, stars: &[Twinkle], clock: f32) {
     if s.skin == Skin::Mouse {
         twinkle(r, stars, clock);
     }
-    for c in &s.world.crystals {
+    for c in &s.level.crystals {
         let a = px(c.area);
         let (cx, cy) = (a.x + TILE * K / 2, a.y + TILE * K / 2);
         let bob = ((clock * 3.0).sin() * 2.0).round() as i32;
@@ -54,7 +54,7 @@ pub fn scene(r: &mut dyn Raster, s: &Session, stars: &[Twinkle], clock: f32) {
         }
     }
     let rumble = s.world.straining();
-    for (i, b) in s.world.blocks.iter().enumerate() {
+    for (i, b) in s.level.blocks.iter().enumerate() {
         let mut q = px(b.rect());
         if rumble == Some(i) {
             // Straining against it: it shudders a pixel each way and sheds a little dust.

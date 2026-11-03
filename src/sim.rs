@@ -13,9 +13,10 @@
 //! ```
 //! use game_toolkit_platformer::sim::{Event, Intent, JumpKind, Level, Preset, World};
 //!
-//! let mut world = World::new(Level::demo(), Preset::Precise.tuning());
-//! world.step(&Intent::default());
-//! world.step(&Intent { jump_pressed: true, jump_held: true, ..Intent::default() });
+//! let mut level = Level::demo();
+//! let mut world = World::on(&level, Preset::Precise.tuning());
+//! world.step(&mut level, &Intent::default());
+//! world.step(&mut level, &Intent { jump_pressed: true, jump_held: true, ..Intent::default() });
 //! assert!(world.events.iter().any(|e| matches!(e, Event::Jumped { kind: JumpKind::Ground, .. })));
 //! ```
 
@@ -26,6 +27,7 @@ pub mod intent;
 pub mod level;
 pub mod player;
 pub mod rect;
+pub mod terrain;
 pub mod tuning;
 
 pub use block::Block;
@@ -35,28 +37,29 @@ pub use intent::Intent;
 pub use level::{Level, TILE, Tile};
 pub use player::{Mode, Player, Shove};
 pub use rect::Rect;
+pub use terrain::Terrain;
 pub use tuning::{Preset, Tuning};
 
 /// The fixed simulation step in seconds (120 Hz).
 pub const DT: f32 = 1.0 / 120.0;
 
-/// A level with the hero in it.
+/// The character's movement: its body, its feel, and the bookkeeping between steps. The
+/// world around it is a [`Terrain`] passed to every [`World::step`], so it stays yours.
 #[derive(Clone, Debug)]
 pub struct World {
-    /// The solid tiles.
-    pub level: Level,
-    /// The hero.
+    /// The character's body.
     pub player: Player,
     /// The movement feel.
     pub tuning: Tuning,
-    /// The dash crystals.
-    pub crystals: Vec<Crystal>,
-    /// The pushable blocks.
-    pub blocks: Vec<Block>,
-    /// Seconds the hero has been pushing or pulling the same block the same way: blocks
+    /// Where it starts, and comes back to after falling out (hitbox top-left, units).
+    pub spawn: (i32, i32),
+    /// Put it back at [`World::spawn`] when it falls out (an [`Event::FellOut`] is
+    /// reported either way).
+    pub respawn: bool,
+    /// Seconds the character has been pushing or pulling the same box the same way: boxes
     /// stick until [`Tuning::push_breakaway`], then speed up over [`Tuning::push_ramp`].
     pub effort: f32,
-    /// What the hero shoved last step, to tell whether the effort carries on.
+    /// What the character shoved last step, to tell whether the effort carries on.
     last_shove: Option<(Shove, usize)>,
     /// Steps taken so far.
     pub tick: u64,
@@ -65,19 +68,13 @@ pub struct World {
 }
 
 impl World {
-    /// A world on `level` with the hero standing at its spawn point.
-    pub fn new(level: Level, tuning: Tuning) -> Self {
-        let player = Player::spawn(&level, &tuning);
-        let crystals = level.crystals.iter().map(|&at| Crystal::at(at)).collect();
-        let blocks: Vec<Block> = level.block_spawns.iter().map(|&at| Block::at(at)).collect();
-        let mut level = level;
-        level.blocks = blocks.iter().map(Block::rect).collect();
+    /// A character standing with its hitbox's top-left at `spawn` (units).
+    pub fn new(tuning: Tuning, spawn: (i32, i32)) -> Self {
         Self {
-            level,
-            player,
+            player: Player::at(spawn, &tuning),
             tuning,
-            crystals,
-            blocks,
+            spawn,
+            respawn: true,
             effort: 0.0,
             last_shove: None,
             tick: 0,
@@ -85,11 +82,16 @@ impl World {
         }
     }
 
-    /// Advance one step of [`DT`] with `intent`. [`World::events`] then holds what
-    /// happened in this step.
-    pub fn step(&mut self, intent: &Intent) {
+    /// A character at `level`'s spawn tile.
+    pub fn on(level: &Level, tuning: Tuning) -> Self {
+        Self::new(tuning, level.spawn_point(player::W, player::H))
+    }
+
+    /// Advance one step of [`DT`] with `intent` in `terrain`. [`World::events`] then holds
+    /// what happened in this step.
+    pub fn step(&mut self, terrain: &mut dyn Terrain, intent: &Intent) {
         self.events.clear();
-        let shove = self.shove(intent);
+        let shove = self.shove(&*terrain, intent);
         let moving = matches!(shove, Some((Shove::Push { .. } | Shove::Pull { .. }, _)));
         self.effort = if moving && shove == self.last_shove {
             self.effort + DT
@@ -99,66 +101,51 @@ impl World {
             0.0
         };
         self.last_shove = shove;
-        // Static friction: nothing moves until the hero has strained long enough.
+        // Static friction: nothing moves until the character has strained long enough.
         let t = &self.tuning;
         let give = ((self.effort - t.push_breakaway) / t.push_ramp.max(DT)).clamp(0.0, 1.0);
         self.player.shove = shove.map_or(Shove::None, |(s, _)| s);
         self.player.shove_give = give;
-        if let Some((Shove::Push { side }, i)) = shove {
-            // The block moves first; the hero follows into the room it made.
+        if let Some((Shove::Push { side }, id)) = shove {
+            // The box moves first; the character follows into the room it made.
             let amount = side as f32 * self.tuning.push_speed * give * DT;
-            let hero = self.player.rect();
-            self.blocks[i].shove(&self.level, i, hero, amount);
-            self.sync_blocks();
+            terrain.shove(id, amount, self.player.rect());
         }
         let before = self.player.x;
         self.player
-            .step(&self.level, intent, &self.tuning, DT, &mut self.events);
-        if let Some((Shove::Pull { .. }, i)) = shove {
-            // The block follows the hero by as many pixels as the hero moved.
+            .step(&*terrain, intent, &self.tuning, DT, &mut self.events);
+        if let Some((Shove::Pull { .. }, id)) = shove {
+            // The box follows the character by as many units as it moved.
             let dx = self.player.x - before;
-            let hero = self.player.rect();
-            self.blocks[i].shove(&self.level, i, hero, dx as f32);
+            terrain.shove(id, dx as f32, self.player.rect());
         }
-        let hero = self.player.rect();
-        for i in 0..self.blocks.len() {
-            self.sync_blocks();
-            self.blocks[i].fall(&self.level, i, hero, &self.tuning, DT);
-        }
-        self.sync_blocks();
         let body = self.player.rect();
-        for c in &mut self.crystals {
-            if c.collect(
-                body,
-                DT,
-                self.player.dashes < self.tuning.dashes,
-                &self.tuning,
-            ) {
-                self.player.dashes = self.tuning.dashes;
-                self.events.push(Event::Recharged { crystal: true });
+        if self.player.dashes < self.tuning.dashes && terrain.refill(body) {
+            self.player.dashes = self.tuning.dashes;
+            self.events.push(Event::Recharged { crystal: true });
+        }
+        terrain.update(DT, body);
+        if terrain.fell_out(body) {
+            self.events.push(Event::FellOut);
+            if self.respawn {
+                self.player = Player::at(self.spawn, &self.tuning);
+                self.events.push(Event::Respawned);
             }
         }
         self.tick += 1;
     }
 
-    /// The block the hero strains against but which hasn't budged yet, if any: it rumbles.
+    /// The box the character strains against but which hasn't budged yet, if any (by the
+    /// terrain's id): it may rumble.
     pub fn straining(&self) -> Option<usize> {
         let (_, i) = self.last_shove?;
         (self.effort > 0.0 && self.effort < self.tuning.push_breakaway).then_some(i)
     }
 
-    /// Copy the blocks' boxes into the level, where collisions see them.
-    fn sync_blocks(&mut self) {
-        self.level.blocks.clear();
-        self.level
-            .blocks
-            .extend(self.blocks.iter().map(Block::rect));
-    }
-
-    /// The hero's hold on a block this step, and which block. Standing beside a resting
-    /// block, walking into it pushes; holding grab facing it holds it, and walking away
+    /// The character's hold on a box this step, and which box. Standing beside a box at
+    /// rest, walking into it pushes; holding grab facing it holds it, and walking away
     /// pulls.
-    fn shove(&self, i: &Intent) -> Option<(Shove, usize)> {
+    fn shove(&self, terrain: &dyn Terrain, i: &Intent) -> Option<(Shove, usize)> {
         let p = &self.player;
         if !self.tuning.push || !p.grounded || p.mode != Mode::Normal {
             return None;
@@ -169,14 +156,11 @@ impl World {
             0
         };
         for side in [p.facing, -p.facing] {
-            // Within 2 px: a block that just moved a pixel ahead still counts.
-            let Some(b) = (1..=2).find_map(|d| self.level.block_at(p.rect().shifted(side * d, 0)))
+            // Within 2 units: a box that just moved a unit ahead still counts.
+            let Some(b) = (1..=2).find_map(|d| terrain.pushable(p.rect().shifted(side * d, 0)))
             else {
                 continue;
             };
-            if !self.blocks[b].grounded {
-                continue;
-            }
             if mx == side {
                 return Some((Shove::Push { side }, b));
             }
