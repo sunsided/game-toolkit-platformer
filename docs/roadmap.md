@@ -28,6 +28,10 @@
 
 - [x] Library and demo split: `game-toolkit-platformer` with a `Platformer` facade, a
   builder, control schemes per preset, a debug draw, a minimal example
+- [x] Plug-and-play gaps: launch/teleport/respawn, spawning on any terrain, custom buttons,
+  boxes on any terrain, custom tiles, a hazards recipe, custom drivers and partial graphs,
+  a configurable hitbox, moving platforms (with squish), ability hooks, several characters
+  (`Party`)
 
 ## Next
 
@@ -41,7 +45,8 @@
 - [ ] Markers to sound: footsteps, dash, landing thuds (synthesized like Starscorcher)
 - [ ] An in-game graph inspector (current state, live transitions, why one didn't fire)
 - [ ] Lab: record intents, rewind and replay (determinism already holds)
-- [ ] More moves: ledge grab, crouch and slide, super/hyper dashes, wall-jump coyote time,
+- [ ] Boxes in a `Party`: a shoved box is stopped by the terrain and the shover only
+- [ ] More moves: ledge grab, crouch and slide (`Player::h` can change; check room to stand), super/hyper dashes, wall-jump coyote time,
   swimming and underwater diving
 - [ ] Camera with look-ahead and larger levels (looking up/down pans it, as in Hollow
   Knight)

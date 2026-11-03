@@ -1541,7 +1541,7 @@ impl Terrain for Elevator {
         r.bottom() > 200 || r.intersects(self.plat)
     }
 
-    fn update(&mut self, dt: f32, _hero: Rect) {
+    fn update(&mut self, dt: f32, _bodies: &[Rect]) {
         self.prev = self.plat;
         self.rem.0 += self.v.0 * dt;
         self.rem.1 += self.v.1 * dt;
@@ -1606,8 +1606,8 @@ fn moving_ground_stops_at_walls_and_ceilings() {
         fn solid(&self, r: Rect) -> bool {
             self.0.solid(r) || (r.y < 60 && r.x < 100)
         }
-        fn update(&mut self, dt: f32, hero: Rect) {
-            self.0.update(dt, hero);
+        fn update(&mut self, dt: f32, bodies: &[Rect]) {
+            self.0.update(dt, bodies);
         }
         fn carry(&self, r: Rect) -> (f32, f32) {
             self.0.carry(r)
@@ -1634,8 +1634,8 @@ fn moving_ground_stops_at_walls_and_ceilings() {
         fn solid(&self, r: Rect) -> bool {
             self.0.solid(r) || r.right() > 120
         }
-        fn update(&mut self, dt: f32, hero: Rect) {
-            self.0.update(dt, hero);
+        fn update(&mut self, dt: f32, bodies: &[Rect]) {
+            self.0.update(dt, bodies);
         }
         fn carry(&self, r: Rect) -> (f32, f32) {
             self.0.carry(r)

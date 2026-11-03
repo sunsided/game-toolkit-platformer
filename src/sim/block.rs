@@ -30,10 +30,10 @@
 //!         self.boxes[id] = b;
 //!         moved
 //!     }
-//!     fn update(&mut self, dt: f32, hero: Rect) {
+//!     fn update(&mut self, dt: f32, bodies: &[Rect]) {
 //!         for i in 0..self.boxes.len() {
 //!             let mut b = self.boxes[i];
-//!             b.fall(self, i, hero, dt);
+//!             b.fall(self, i, bodies, dt);
 //!             self.boxes[i] = b;
 //!         }
 //!     }
@@ -123,15 +123,15 @@ impl Block {
     }
 
     /// Whether block `me` would hit something at `r`: the terrain (other boxes included,
-    /// itself not), the hero.
-    fn blocked(terrain: &dyn Terrain, me: usize, hero: Rect, r: Rect) -> bool {
-        terrain.solid_except(r, Some(me)) || r.intersects(hero)
+    /// itself not), the characters' `bodies`.
+    fn blocked(terrain: &dyn Terrain, me: usize, bodies: &[Rect], r: Rect) -> bool {
+        terrain.solid_except(r, Some(me)) || bodies.iter().any(|b| r.intersects(*b))
     }
 
     /// Whether block `me` rests on something.
-    fn rests(&self, terrain: &dyn Terrain, me: usize, hero: Rect) -> bool {
+    fn rests(&self, terrain: &dyn Terrain, me: usize, bodies: &[Rect]) -> bool {
         let r = self.rect();
-        Self::blocked(terrain, me, hero, r.shifted(0, 1)) || terrain.platform(r)
+        Self::blocked(terrain, me, bodies, r.shifted(0, 1)) || terrain.platform(r)
     }
 
     /// Slide sideways by `amount` units (fractions accumulate), stopping at anything
@@ -143,7 +143,7 @@ impl Block {
         self.rem_x -= n as f32;
         let s = n.signum();
         for k in 0..n.abs() {
-            if Self::blocked(terrain, me, hero, self.rect().shifted(s, 0)) {
+            if Self::blocked(terrain, me, &[hero], self.rect().shifted(s, 0)) {
                 self.rem_x = 0.0;
                 return k * s;
             }
@@ -153,9 +153,9 @@ impl Block {
     }
 
     /// Gravity and falling for one step in `terrain` (where it is box `me`): lands on the
-    /// ground, platforms, other boxes and the hero's body `hero`.
-    pub fn fall(&mut self, terrain: &dyn Terrain, me: usize, hero: Rect, dt: f32) {
-        if self.rests(terrain, me, hero) {
+    /// ground, platforms, other boxes and the characters' `bodies`.
+    pub fn fall(&mut self, terrain: &dyn Terrain, me: usize, bodies: &[Rect], dt: f32) {
+        if self.rests(terrain, me, bodies) {
             self.grounded = true;
             self.vy = 0.0;
             self.rem_y = 0.0;
@@ -167,7 +167,7 @@ impl Block {
         let n = self.rem_y.round() as i32;
         self.rem_y -= n as f32;
         for _ in 0..n {
-            if self.rests(terrain, me, hero) {
+            if self.rests(terrain, me, bodies) {
                 self.vy = 0.0;
                 self.rem_y = 0.0;
                 self.grounded = true;

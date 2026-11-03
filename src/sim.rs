@@ -63,6 +63,9 @@ pub struct World {
     pub effort: f32,
     /// What the character shoved last step, to tell whether the effort carries on.
     last_shove: Option<(Shove, usize)>,
+    /// What it rode when it finished moving this step (see [`Player::riding`]), for
+    /// [`World::settle`].
+    riding: Option<Rect>,
     /// Steps taken so far.
     pub tick: u64,
     /// What happened in the last step.
@@ -81,6 +84,7 @@ impl World {
             respawn: true,
             effort: 0.0,
             last_shove: None,
+            riding: None,
             tick: 0,
             events: Vec::new(),
             abilities: Vec::new(),
@@ -94,7 +98,19 @@ impl World {
 
     /// Advance one step of [`DT`] with `intent` in `terrain`. [`World::events`] then holds
     /// what happened in this step.
+    ///
+    /// It runs [`World::act`], the terrain's [`Terrain::update`] and [`World::settle`];
+    /// several characters on one terrain run those apart, so the terrain updates once per
+    /// step (see [`crate::Party`]).
     pub fn step(&mut self, terrain: &mut dyn Terrain, intent: &Intent) {
+        self.act(terrain, intent);
+        terrain.update(DT, &[self.player.rect()]);
+        self.settle(terrain, None);
+    }
+
+    /// The first part of a step: the character moves (boxes, your abilities, the built-in
+    /// moves, refills), the terrain doesn't update yet.
+    pub fn act(&mut self, terrain: &mut dyn Terrain, intent: &Intent) {
         self.events.clear();
         let shove = self.shove(&*terrain, intent);
         let moving = matches!(shove, Some((Shove::Push { .. } | Shove::Pull { .. }, _)));
@@ -131,9 +147,17 @@ impl World {
             self.player.dashes = self.tuning.dashes;
             self.events.push(Event::Recharged { crystal: true });
         }
-        let rides = self.player.riding();
-        terrain.update(DT, body);
-        let carry = rides.map(|r| terrain.carry(r));
+        self.riding = self.player.riding();
+    }
+
+    /// The last part of a step, after the terrain's update: moving ground carries the
+    /// character (`extra` adds to how far, for riding on other characters), and it may be
+    /// squished or fall out.
+    pub fn settle(&mut self, terrain: &mut dyn Terrain, extra: Option<(f32, f32)>) {
+        let carry = match (self.riding.map(|r| terrain.carry(r)), extra) {
+            (Some((x, y)), Some((ex, ey))) => Some((x + ex, y + ey)),
+            (c, None) | (None, c) => c,
+        };
         self.player.ride(&*terrain, carry, &self.tuning, DT);
         let body = self.player.rect();
         if terrain.solid(body) {
@@ -155,6 +179,7 @@ impl World {
         self.player = Player::at(at, &self.tuning);
         self.effort = 0.0;
         self.last_shove = None;
+        self.riding = None;
         self.events.push(Event::Respawned);
     }
 

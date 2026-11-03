@@ -88,9 +88,10 @@ pub trait Terrain {
         false
     }
 
-    /// Once per step after the character moved, with its body `hero`: let things fall,
-    /// refills come back, platforms move, and so on. Default: nothing.
-    fn update(&mut self, _dt: f32, _hero: Rect) {}
+    /// Once per step after the characters moved, with their `bodies` (one, unless several
+    /// share the terrain through a [`crate::Party`]): let things fall onto them, refills
+    /// come back, platforms move, and so on. Default: nothing.
+    fn update(&mut self, _dt: f32, _bodies: &[Rect]) {}
 
     /// How far the solid (or one-way platform) overlapping `r` moved in the last
     /// [`Terrain::update`], in units: moving platforms, elevators. Default: nothing moves.

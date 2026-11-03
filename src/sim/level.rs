@@ -39,8 +39,8 @@
 //!     fn fell_out(&self, r: Rect) -> bool {
 //!         self.level.fell_out(r)
 //!     }
-//!     fn update(&mut self, dt: f32, hero: Rect) {
-//!         self.level.update(dt, hero);
+//!     fn update(&mut self, dt: f32, bodies: &[Rect]) {
+//!         self.level.update(dt, bodies);
 //!     }
 //! }
 //! # let _ = Stage { level: Level::demo(), doors_open: false }.doors_open;
@@ -328,13 +328,13 @@ impl Terrain for Level {
         r.y > self.floor_y() + 4 * TILE
     }
 
-    fn update(&mut self, dt: f32, hero: Rect) {
+    fn update(&mut self, dt: f32, bodies: &[Rect]) {
         for c in &mut self.crystals {
             c.cooldown = (c.cooldown - dt).max(0.0);
         }
         for i in 0..self.blocks.len() {
             let mut b = self.blocks[i];
-            b.fall(self, i, hero, dt);
+            b.fall(self, i, bodies, dt);
             self.blocks[i] = b;
         }
     }

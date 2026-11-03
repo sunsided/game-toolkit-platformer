@@ -89,9 +89,11 @@ pub mod controls;
 #[cfg(feature = "toolkit")]
 mod debug_draw;
 pub mod hero;
+pub mod party;
 pub mod platformer;
 pub mod sim;
 
+pub use party::Party;
 pub use platformer::{Builder, Platformer};
 
 /// Everything a game needs to get started: `use game_toolkit_platformer::prelude::*;`.
@@ -99,6 +101,7 @@ pub mod prelude {
     pub use crate::anim::{AnimEvent, GraphSpec};
     #[cfg(feature = "toolkit")]
     pub use crate::controls::{Controls, Scheme};
+    pub use crate::party::Party;
     pub use crate::platformer::{Builder, Platformer};
     pub use crate::sim::{Event, Intent, JumpKind, Level, Preset, Rect, Terrain, Tile, Tuning};
 }

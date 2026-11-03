@@ -5,7 +5,7 @@
 presets tuned toward the feel of Celeste, Hollow Knight, Silksong and Super Meat Boy, plus an animation state
 graph that follows it). The library is the product; `demo/` is its test bench. Keep using it
 plug and play for game-toolkit users: `Platformer::on(&level, preset)`, `update(&input, &mut level, dt)`,
-draw `sprite()` at `position()`. Design docs live in `docs/`; keep them in sync when behavior
+draw `sprite()` at `position()`. Design docs live in `docs/` (`hazards.md` is a doc-tested recipe); keep them in sync when behavior
 changes (`docs/roadmap.md` tracks what's next). Keep the README short; details go in `docs/`.
 
 ## Layout
@@ -21,17 +21,21 @@ default):
   abilities in a fixed order; each ability is its own module in `sim/player/`. Every feel
   number and ability switch lives in `sim/tuning.rs` (`Tuning`, `Preset`). Movement emits
   `Event`s; nothing in `sim` knows about animation. `sim/level.rs` holds the demo level
-  (keep its stairs within a plain held jump; a test checks). `sim/terrain.rs`: the `Terrain`
-  trait the world steps through (only `solid` required; closures count; `Level` implements
-  all of it, crystals and boxes included).
+  (keep its stairs within a plain held jump; a test checks) and `Tile::Custom` tiles.
+  `sim/terrain.rs`: the `Terrain` trait the world steps through (only `solid` required;
+  closures count; `Level` implements all of it, crystals and boxes included; `carry` for
+  moving ground). `sim/ability.rs`: the `Ability` hooks for a game's own moves
+  (`Mode::Custom`, `Event::Custom`). `World::step` is `act`, `Terrain::update`, `settle`.
 - `anim/`: the animation controller, independent of any game. `Params` (bools, floats,
   triggers with TTL), `Clip`, `Cond`, `GraphSpec` (by name, `Cow<'static, str>`) compiled
   into a validated `Graph`, `Animator`, `Driver`. Keep it free of `sim`/`hero` imports.
 - `hero/`: the built-in character: sprite numbers, the graph spec, `HeroDriver` (sim facts
   and events to params; `try_new` reports a custom graph's missing parameter).
 - `platformer.rs`: the `Platformer` facade and its `Builder` (preset, `tune`, tuning,
-  controls, graph, spawn): fixed-step clock, press latching, event queues, interpolated
-  position.
+  controls, graph or partial graph, drivers, abilities, spawn): fixed-step clock, press
+  latching, event queues, interpolated position; `launch`, `teleport`, `respawn`.
+- `party.rs`: `Party`, several `Platformer`s on one terrain and one clock (the terrain
+  updates once per step; members block, stand on and ride each other).
 - `controls.rs` (feature `toolkit`): game-toolkit input to an `Intent` through a `Scheme`
   (`Scheme::SNAPPY`, `PRECISE`, `MOMENTUM`, or `Scheme::of(preset)`).
 - `debug_draw.rs` (feature `toolkit`): `Platformer::draw_debug` with game-toolkit's painter.

@@ -37,6 +37,15 @@ use crate::sim::{
 /// At most this many fixed steps per frame, so a hitch doesn't spiral.
 const MAX_STEPS: u32 = 8;
 
+/// Add `dt` seconds of frame time to the clock `acc` and take the fixed steps due: how
+/// many (at most [`MAX_STEPS`]).
+pub(crate) fn steps(acc: &mut f32, dt: f32) -> u32 {
+    *acc += dt;
+    let n = ((*acc / DT) as u32).min(MAX_STEPS);
+    *acc = (*acc - n as f32 * DT).clamp(0.0, DT);
+    n
+}
+
 /// One playable character. The world around it is yours: pass your [`Terrain`] (or a
 /// [`Level`]) to each update. For spikes, springs, checkpoints and pickups, test
 /// [`Platformer::hitbox`] after the update and answer with [`Platformer::respawn`],
@@ -297,32 +306,57 @@ impl Platformer {
     /// Presses are kept until the next step, so a frame without one doesn't lose them.
     /// Returns the steps taken.
     pub fn advance(&mut self, intent: Intent, terrain: &mut dyn Terrain, dt: f32) -> u32 {
-        self.latch.jump_pressed |= intent.jump_pressed;
-        self.latch.dash_pressed |= intent.dash_pressed;
-        self.latch.dive_pressed |= intent.dive_pressed;
-        self.latch.custom_pressed |= intent.custom_pressed;
-        self.acc += dt;
-        let n = ((self.acc / DT) as u32).min(MAX_STEPS);
-        self.acc = (self.acc - n as f32 * DT).clamp(0.0, DT);
+        self.hold_presses(&intent);
+        let n = steps(&mut self.acc, dt);
         for _ in 0..n {
-            let i = Intent {
-                jump_pressed: self.latch.jump_pressed,
-                dash_pressed: self.latch.dash_pressed,
-                dive_pressed: self.latch.dive_pressed,
-                custom_pressed: self.latch.custom_pressed,
-                ..intent
-            };
-            self.latch = Intent::default();
+            let i = self.with_presses(intent);
             self.step(&i, terrain);
         }
         n
     }
 
+    /// Keep `intent`'s presses until the next step.
+    pub(crate) fn hold_presses(&mut self, intent: &Intent) {
+        self.latch.jump_pressed |= intent.jump_pressed;
+        self.latch.dash_pressed |= intent.dash_pressed;
+        self.latch.dive_pressed |= intent.dive_pressed;
+        self.latch.custom_pressed |= intent.custom_pressed;
+    }
+
+    /// `intent` with the presses kept since the last step, which are then used up.
+    pub(crate) fn with_presses(&mut self, intent: Intent) -> Intent {
+        let i = Intent {
+            jump_pressed: self.latch.jump_pressed,
+            dash_pressed: self.latch.dash_pressed,
+            dive_pressed: self.latch.dive_pressed,
+            custom_pressed: self.latch.custom_pressed,
+            ..intent
+        };
+        self.latch = Intent::default();
+        i
+    }
+
     /// Exactly one fixed step of [`DT`] with `intent` in `terrain` (for your own clock,
     /// replays, tests).
     pub fn step(&mut self, intent: &Intent, terrain: &mut dyn Terrain) {
-        self.prev = self.world.player.exact_pos();
+        self.begin_step();
         self.world.step(terrain, intent);
+        self.end_step();
+    }
+
+    /// Set the clock's leftover time (a [`crate::Party`] keeps one clock for everyone), so
+    /// [`Platformer::position`] draws between steps.
+    pub(crate) fn set_clock(&mut self, acc: f32) {
+        self.acc = acc;
+    }
+
+    /// Before a step: remember where the body was, to draw between steps.
+    pub(crate) fn begin_step(&mut self) {
+        self.prev = self.world.player.exact_pos();
+    }
+
+    /// After a step: collect its events, drive the animation.
+    pub(crate) fn end_step(&mut self) {
         self.events.extend(self.world.events.iter().copied());
         if let Some(d) = &mut self.driver {
             d.drive(&self.world, &mut self.animator.params);
@@ -362,12 +396,17 @@ impl Platformer {
 
     /// The hitbox's top-left in units, smoothly between fixed steps: where to draw.
     pub fn position(&self) -> (f32, f32) {
+        self.position_at(self.acc)
+    }
+
+    /// [`Platformer::position`] with `acc` seconds into the next step.
+    pub(crate) fn position_at(&self, acc: f32) -> (f32, f32) {
         let (x, y) = self.world.player.exact_pos();
         let (px, py) = self.prev;
         if (x - px).abs() > 16.0 || (y - py).abs() > 16.0 {
             return (x, y);
         }
-        let a = (self.acc / DT).clamp(0.0, 1.0);
+        let a = (acc / DT).clamp(0.0, 1.0);
         (px + (x - px) * a, py + (y - py) * a)
     }
 
