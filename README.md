@@ -6,7 +6,7 @@ A small retro platformer that exists to grow a pluggable, configurable animation
 
 A character controller that feels as good as the ones in Hollow Knight, Celeste or Super Meat Boy is really two systems: movement that is precise and forgiving, and animation that shows every one of its decisions without ever holding one up. The first part is well documented by now; the second usually ends up as a pile of conditionals in the player script. This repository tries the other way around: the animation is a state graph made of named parameters, clips, conditions and priorities, compiled and validated, and run by an animator that doesn't know what it animates. The game around it is the test bench, and its hero combines moves from all three games so the controller has enough to animate.
 
-It is written in Rust on [game-toolkit](https://github.com/sunsided/game-toolkit) and borrows its technical setup from my artillery game Starscorcher: a deterministic simulation free of toolkit types, a 384x216 pixel grid drawn through one `Raster` trait, and the toolkit only in the app module. There is no art yet: the hero is a placeholder block that squashes, stretches and tilts into one pose per sprite number, which is enough to tell every state and frame apart.
+It is written in Rust on [game-toolkit](https://github.com/sunsided/game-toolkit) and borrows its technical setup from my artillery game Starscorcher: a deterministic simulation free of toolkit types, a 384x216 pixel grid drawn through one `Raster` trait, and the toolkit only in the app module. The hero is the heroine of my game Cheesed, a mouse with a blonde mane, a red headband and a torn red cape, drawn after her character sheet at 12 pixels tall (see [The heroine](#the-heroine)).
 
 ## The moves
 
@@ -25,6 +25,14 @@ Everything the movement can do, each tunable and each animated:
 | ![Bouncing up the narrow chimney](docs/art/chimney-bounce.png) | ![Push, hold and pull a box](docs/art/push-pull.png) |
 
 The pictures are filmstrips (`task snapshot`): a scripted move played headless, the hero drawn every few steps, and the animation states it went through as the caption.
+
+## The heroine
+
+![The heroine in every sprite pose](docs/art/poses.png)
+
+She is a cut-out puppet rather than hand-drawn frames: boots, tunic, arm, head, snout, ears and headband are placed in the body's frame for each of the 78 sprite poses, so every squash, stretch and lean carries over. The cape, tail, mane and headband ends are short simulated chains; they trail behind her, swing over when she turns, open up when she glides, and settle when she stands. The colors come from the character sheet's palette. When her dash is spent, the mane turns pale blue, as Madeline's hair does in Celeste, and the dash crystals are cheese wedges (with a heart for each one eaten). F3 switches to the old debug blocks, colored by kind of state, and `task poses` renders the sheet above.
+
+Her face is two or three pixels at this size, so the sheet's expressions don't show, and her sword waits for an attack move.
 
 ## Playing
 
@@ -128,6 +136,7 @@ Most of the tooling exists to inspect the animation:
 task run          # play
 task test         # movement rules, determinism, controller, hero graph
 task snapshot     # filmstrips of every scripted move into snapshots/
+task poses        # the heroine in every sprite pose, one sheet
 task screenshot   # the real window after 2 s, into screenshots/
 task check        # fmt + clippy, warnings as errors (docs required everywhere)
 ```
@@ -136,7 +145,7 @@ You'll need a Rust toolchain of 1.95 or newer and [go-task](https://taskfile.dev
 
 ## Current limitations
 
-- No art: placeholder poses, no sound, a single screen without a camera.
+- No hand-drawn frames yet (she is a puppet in code), no sound, a single screen without a camera.
 - Graphs and tunings are written in code; loading them from files (and hot-reloading while playing) is next.
 - Silksong's own button layout isn't modeled; its preset borrows Hollow Knight's.
 

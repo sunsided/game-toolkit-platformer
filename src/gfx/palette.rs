@@ -40,6 +40,38 @@ pub const STONE_DK: Rgb = Rgb::hex(0x2a2a3a);
 pub const STONE: Rgb = Rgb::hex(0x4a4a64);
 /// Light stone: the lit top edge of tiles.
 pub const STONE_LT: Rgb = Rgb::hex(0x8a8aa8);
+/// The mouse's fur, from the Cheesed character sheet.
+pub const MOUSE_FUR: Rgb = Rgb::hex(0xb9a6c6);
+/// The mouse's fur in shadow: the far ear, legs.
+pub const MOUSE_FUR_DK: Rgb = Rgb::hex(0x8d7a9e);
+/// Inside the ears, the tail (the sheet's "fur (light)").
+pub const MOUSE_PINK: Rgb = Rgb::hex(0xfab9c9);
+/// The far ear's inside, the nose.
+pub const MOUSE_PINK_DK: Rgb = Rgb::hex(0xd88aa4);
+/// The blonde mane.
+pub const MOUSE_HAIR: Rgb = Rgb::hex(0xfdab13);
+/// The mane in shadow.
+pub const MOUSE_HAIR_DK: Rgb = Rgb::hex(0xd0850a);
+/// The mane with the dash spent (as Madeline's hair turns in Celeste).
+pub const MOUSE_HAIR_SPENT: Rgb = Rgb::hex(0x9fb6e0);
+/// The mane in shadow with the dash spent.
+pub const MOUSE_HAIR_SPENT_DK: Rgb = Rgb::hex(0x6f86b8);
+/// Headband and cape.
+pub const MOUSE_RED: Rgb = Rgb::hex(0xbc1327);
+/// The cape's torn hem.
+pub const MOUSE_RED_DK: Rgb = Rgb::hex(0x7e0c1c);
+/// The tunic.
+pub const MOUSE_TUNIC: Rgb = Rgb::hex(0x9c6c89);
+/// Boots, belt, gloves.
+pub const MOUSE_LEATHER: Rgb = Rgb::hex(0x934729);
+/// The belt buckle.
+pub const MOUSE_METAL: Rgb = Rgb::hex(0xee9210);
+/// The eye, a single dark pixel at this size.
+pub const MOUSE_EYE: Rgb = Rgb::hex(0x2a1626);
+/// Cheese: the wedge.
+pub const CHEESE: Rgb = Rgb::hex(0xfdc443);
+/// Cheese: the rind and the holes.
+pub const CHEESE_DK: Rgb = Rgb::hex(0xd99a1a);
 /// Wood: blocks.
 pub const WOOD: Rgb = Rgb::hex(0x9a6a3a);
 /// Dark wood: block outlines and braces.

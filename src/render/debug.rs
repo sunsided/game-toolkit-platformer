@@ -31,7 +31,10 @@ pub fn draw(r: &mut dyn Raster, s: &Session) {
         Overlay::Full => true,
     };
     let p = &s.world.player;
-    r.rect_outline(p.x - 1, p.y - 1, player::W + 2, player::H + 2, pal::STEEL);
+    if full {
+        // The hitbox, only in the full overlay: it covers the hero otherwise.
+        r.rect_outline(p.x - 1, p.y - 1, player::W + 2, player::H + 2, pal::STEEL);
+    }
     body(r, s, full);
     params(r, s, full);
     log(r, s, full);

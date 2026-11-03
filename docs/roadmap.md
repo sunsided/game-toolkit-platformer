@@ -18,12 +18,14 @@
 - [x] Control schemes per preset; Silksong-like preset with glide; run-and-roll
 - [x] Sprint button (Super Meat Boy's run)
 - [x] Super dash (Crystal Heart); gamepad triggers read as axes too
+- [x] The Cheesed heroine as a cut-out puppet with simulated cape, tail and mane; cheese
+  wedges for crystals; `task poses`
 
 ## Next
 
 - [ ] Specs from data: serde + RON for `GraphSpec` and `Tuning`, hot reload while playing
-- [ ] Real art: Aseprite sheets (toolkit `aseprite` feature), sprite numbers to cells,
-  per-frame pivots and hitbox-independent offsets
+- [ ] Hand-drawn frames for the heroine: Aseprite sheets (toolkit `aseprite` feature),
+  sprite numbers to cells; her expressions as a portrait; an attack for the sword
 - [ ] Layers: an upper-body / overlay layer (attacks over running), additive squash and
   stretch driven by landing impact
 - [ ] Transition durations / cross-frames (hold-frame blends for pixel art)

@@ -22,7 +22,9 @@ strict lints). Design docs live in `docs/`; keep them in sync when behavior chan
   `Graph` (everything by id), `Animator` (runs a graph), `Driver` (subject to params).
   Keep it free of `sim`/`hero` imports.
 - `src/hero/`: the hero's binding: sprite numbers, its graph spec, `HeroDriver`
-  (sim facts and events to params). A new move = sim event/mode, a driver line, states
+  (sim facts and events to params), the pose table (`pose.rs`: what each sprite number
+  means for the body) and the rig (`rig.rs`: body frame, simulated cape, tail, mane and
+  headband chains, stepped in the session). A new move = sim event/mode, a driver line, states
   and transitions here, a pose in `render/hero.rs`.
 - `src/session.rs`: a game in progress (world + animator + clock + fx). Toolkit-free: takes
   an `Intent` + `dt`. Latches presses between fixed steps so slow motion never drops one.
@@ -30,8 +32,9 @@ strict lints). Design docs live in `docs/`; keep them in sync when behavior chan
 - `src/gfx/`: the 384x216 grid (8 px tiles, 5x = 1080p). Draw through `Raster` only.
   `Canvas` = CPU image (backdrop, snapshots), `DrawList` = spans the app turns into GPU
   rects. Copied from Starscorcher.
-- `src/render/`: backdrop, scene, placeholder hero poses (`hero.rs`, one per sprite number
-  until there is art), the debug overlay (`debug.rs`).
+- `src/render/`: backdrop, scene, the heroine (`mouse.rs`: a cut-out puppet after the
+  Cheesed character sheet, kept outside the repo in pCloud), the debug-block look
+  (`hero.rs`, F3), the debug overlay (`debug.rs`). `task poses` renders every sprite.
 - `src/app.rs` + `src/app/`: the only toolkit glue: input (keyboard + gamepad, Hollow
   Knight's mapping; `app/controls.rs`), presenting, screenshots.
 - `src/sim/level.rs`: the demo level sits around the overlay's corners; keep stairs within

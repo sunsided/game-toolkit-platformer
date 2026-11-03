@@ -10,6 +10,7 @@ pub mod fx;
 use std::collections::VecDeque;
 
 use crate::anim::{AnimEvent, Animator, Driver};
+use crate::hero::rig::Rig;
 use crate::hero::{HeroDriver, graph};
 use crate::sim::{DT, Event, Intent, Level, Mode, Preset, Tuning, World, player};
 pub use clock::Clock;
@@ -17,6 +18,15 @@ pub use fx::{Fx, FxColor};
 
 /// Lines kept in the event log (the overlay's bottom-left corner).
 const LOG: usize = 6;
+
+/// How the hero is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Skin {
+    /// The heroine of Cheesed.
+    Mouse,
+    /// Debug blocks, colored by kind of state.
+    Blocks,
+}
 
 /// How much of the debug overlay to show.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -59,6 +69,8 @@ pub struct Keys {
     pub reset: bool,
     /// Switch to the next feel preset.
     pub preset: bool,
+    /// Switch the hero's look (mouse, debug blocks).
+    pub skin: bool,
 }
 
 /// A game in progress.
@@ -85,6 +97,10 @@ pub struct Session {
     pub last_intent: Intent,
     /// The feel preset in use (when the tuning came from one).
     pub preset: Option<Preset>,
+    /// The hero's simulated cape, tail, mane and headband ends.
+    pub rig: Rig,
+    /// How the hero is drawn.
+    pub skin: Skin,
 }
 
 impl Session {
@@ -112,6 +128,8 @@ impl Session {
             log: VecDeque::new(),
             last_intent: Intent::default(),
             preset: None,
+            rig: Rig::default(),
+            skin: Skin::Mouse,
         }
     }
 
@@ -133,7 +151,14 @@ impl Session {
                 overlay: self.overlay,
                 clock: self.clock.clone(),
                 preset: self.preset,
+                skin: self.skin,
                 ..Self::with(level, tuning)
+            };
+        }
+        if keys.skin {
+            self.skin = match self.skin {
+                Skin::Mouse => Skin::Blocks,
+                Skin::Blocks => Skin::Mouse,
             };
         }
         if keys.preset {
@@ -166,6 +191,10 @@ impl Session {
         self.world.step(i);
         self.driver.drive(&self.world, &mut self.animator.params);
         self.animator.update(DT);
+        let p = &self.world.player;
+        let (x, y) = p.exact_pos();
+        let sprite = self.animator.sprite();
+        self.rig.step(x, y, sprite, p.facing, (p.vx, p.vy), DT);
         self.fx.retain_mut(|f| f.tick(DT));
         self.effects();
     }
@@ -180,6 +209,12 @@ impl Session {
             match *e {
                 Event::Recharged { crystal: true } => {
                     self.fx.push(ring(cx, mid, 14.0, 0.3, FxColor::Recharge));
+                    self.fx.push(Fx::Heart {
+                        x: cx,
+                        y: mid - 10.0,
+                        t: 0.0,
+                        dur: 0.8,
+                    });
                 }
                 Event::Jumped {
                     kind: crate::sim::JumpKind::Double,

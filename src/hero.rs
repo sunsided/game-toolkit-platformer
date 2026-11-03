@@ -6,6 +6,8 @@
 
 pub mod driver;
 pub mod graph;
+pub mod pose;
+pub mod rig;
 pub mod sprite;
 
 pub use driver::HeroDriver;

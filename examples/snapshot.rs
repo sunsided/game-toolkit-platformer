@@ -8,7 +8,7 @@
 
 use animation::gfx::font::{self, Font};
 use animation::gfx::{Canvas, H, Raster, W, palette as pal, png};
-use animation::render::{backdrop, hero};
+use animation::render::{backdrop, mouse};
 use animation::session::{Overlay, Session};
 use animation::sim::{Intent, Preset, TILE, World, player};
 
@@ -364,7 +364,19 @@ fn main() {
             if k % EVERY == 0 || k + 1 == sc.steps {
                 let (x, y) = s.world.player.exact_pos();
                 let p = &s.world.player;
-                hero::draw(&mut canvas, x, y, s.animator.sprite(), p.facing, None, 1.0);
+                let sprite = s.animator.sprite();
+                mouse::draw(
+                    &mut canvas,
+                    x,
+                    y,
+                    sprite,
+                    p.facing,
+                    Some(&s.rig),
+                    (0.0, 0.0),
+                    false,
+                    None,
+                    1.0,
+                );
             }
         }
         // The final frame on top: blocks, crystals, effects, the hero where it ended.

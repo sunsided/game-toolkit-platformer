@@ -52,11 +52,19 @@ Priorities, highest first: dive impact, dive, roll / hard landing, dashes, air j
 wall jump, grab, jump / hop / drop, landing, leaving continuous states, walls, ground, the
 air arc, and a low-priority net that settles air states on the ground.
 
+## Drawing
+
+The graph only names sprite numbers. `hero/pose.rs` says what each means for the body
+(size, lean, lift); `render/mouse.rs` draws the heroine as a cut-out puppet in that body
+frame, and `hero/rig.rs` simulates her cape, tail, mane and headband ends as short Verlet
+chains with gravity, air drag from moving and a rest shape (the tail curls). Hand-drawn
+frames would replace `mouse.rs` and keep everything else.
+
 ## Adding a move
 
 1. Sim: a mode or rule, an `Event`, a test.
 2. Spec: a trigger or bool, a state with its clip, transitions.
 3. Driver: map the event or fact to the parameter.
-4. Sprites: new numbers in `hero/sprite.rs`, a pose in `render/hero.rs`
+4. Sprites: new numbers in `hero/sprite.rs`, a pose in `hero/pose.rs`
    (`session::tests` fails if a sprite is never shown).
 5. A script in `examples/snapshot.rs`, then `task snapshot`.

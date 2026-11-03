@@ -7,9 +7,10 @@
 
 pub mod debug;
 pub mod hero;
+pub mod mouse;
 
 use crate::gfx::{Canvas, H, Raster, W, bayer, palette as pal};
-use crate::session::{Fx, FxColor, Session};
+use crate::session::{Fx, FxColor, Session, Skin};
 use crate::sim::{Level, TILE, Tile};
 
 /// Draw the level's static part: the sky and the tiles.
@@ -57,13 +58,11 @@ pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
         let (cx, cy) = (c.area.x + TILE / 2, c.area.y + TILE / 2);
         let bob = ((clock * 3.0).sin() * 1.5).round() as i32;
         if c.ready() {
-            diamond(r, cx, cy + bob, 3, pal::CYAN);
-            r.put(cx - 1, cy + bob - 1, pal::WHITE);
+            cheese(r, cx, cy + bob);
         } else {
-            r.put(cx, cy - 3, pal::STEEL);
-            r.put(cx, cy + 3, pal::STEEL);
-            r.put(cx - 3, cy, pal::STEEL);
-            r.put(cx + 3, cy, pal::STEEL);
+            // Eaten: crumbs where it was, until it's back.
+            r.put(cx - 2, cy + 2, pal::CHEESE_DK);
+            r.put(cx + 1, cy + 3, pal::CHEESE_DK);
         }
     }
     let rumble = s.world.straining();
@@ -96,29 +95,58 @@ pub fn scene(r: &mut dyn Raster, s: &Session, clock: f32) {
         r.fill_rect(q.x + 1, q.y + 1, q.w - 2, 1, pal::WOOD_LT);
     }
     for f in &s.fx {
-        effect(r, f);
+        effect(r, f, s.skin);
     }
     let (x, y) = s.hero_pos();
     let p = &s.world.player;
-    let tint = if p.dashes == 0 {
-        Some(pal::STEEL_LT)
-    } else {
-        None
-    };
-    hero::draw(r, x, y, s.animator.sprite(), p.facing, tint, 1.0);
+    let spent = p.dashes == 0 && s.world.tuning.dashes > 0;
+    // The rig was simulated at the step's position; she's drawn between steps.
+    let (sx, sy) = p.exact_pos();
+    let shift = (x - sx, y - sy);
+    let sprite = s.animator.sprite();
+    match s.skin {
+        Skin::Mouse => mouse::draw(
+            r,
+            x,
+            y,
+            sprite,
+            p.facing,
+            Some(&s.rig),
+            shift,
+            spent,
+            None,
+            1.0,
+        ),
+        Skin::Blocks => {
+            let tint = spent.then_some(pal::STEEL_LT);
+            hero::draw(r, x, y, sprite, p.facing, tint, 1.0);
+        }
+    }
     debug::draw(r, s);
 }
 
-/// A filled diamond of radius `rad`.
-fn diamond(r: &mut dyn Raster, cx: i32, cy: i32, rad: i32, c: crate::gfx::Rgb) {
-    for dy in -rad..=rad {
-        let half = rad - dy.abs();
-        r.span(cx - half, cx + half + 1, cy + dy, c, 1.0);
+/// A wedge of cheese centered near `cx, cy`, holes and all.
+fn cheese(r: &mut dyn Raster, cx: i32, cy: i32) {
+    for row in 0..5 {
+        let w = 2 + row;
+        r.span(cx - 3, cx - 3 + w + 1, cy - 2 + row, pal::CHEESE, 1.0);
     }
+    r.span(cx - 3, cx + 4, cy + 3, pal::CHEESE_DK, 1.0);
+    r.put(cx - 1, cy, pal::CHEESE_DK);
+    r.put(cx + 1, cy + 2, pal::CHEESE_DK);
+}
+
+/// A 5x4 heart with its top-left at `x - 2, y`.
+fn heart(r: &mut dyn Raster, x: i32, y: i32) {
+    r.put(x - 1, y, pal::RED);
+    r.put(x + 1, y, pal::RED);
+    r.span(x - 2, x + 3, y + 1, pal::RED, 1.0);
+    r.span(x - 1, x + 2, y + 2, pal::RED, 1.0);
+    r.put(x, y + 3, pal::RED);
 }
 
 /// Draw one effect.
-fn effect(r: &mut dyn Raster, f: &Fx) {
+fn effect(r: &mut dyn Raster, f: &Fx, skin: Skin) {
     let k = f.progress();
     match *f {
         Fx::Ring {
@@ -146,7 +174,20 @@ fn effect(r: &mut dyn Raster, f: &Fx) {
             facing,
             ..
         } => {
-            hero::draw(r, x, y, sprite, facing, Some(pal::CYAN), 0.5 * (1.0 - k));
+            let a = 0.5 * (1.0 - k);
+            match skin {
+                Skin::Mouse => {
+                    let c = Some(pal::CYAN);
+                    mouse::draw(r, x, y, sprite, facing, None, (0.0, 0.0), false, c, a);
+                }
+                Skin::Blocks => hero::draw(r, x, y, sprite, facing, Some(pal::CYAN), a),
+            }
+        }
+        Fx::Heart { x, y, .. } => {
+            let (hx, hy) = (x as i32, (y - k * 8.0) as i32);
+            if 1.0 - k > bayer(hx, hy) {
+                heart(r, hx, hy);
+            }
         }
         Fx::Dust { x, y, spread, .. } => {
             let d = spread * k;

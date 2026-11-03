@@ -29,6 +29,11 @@ tasks:
     cmds:
       - cargo run --release --example snapshot -- snapshots {{.CLI_ARGS}}
 
+  poses:
+    desc: "The heroine in every sprite pose, one sheet: snapshots/poses.png (or task poses -- <out.png> [scale])"
+    cmds:
+      - cargo run --release --example poses -- {{ if .CLI_ARGS }}{{.CLI_ARGS}}{{ else }}snapshots/poses.png{{ end }}
+
   build:
     desc: Build (PROFILE=debug|release)
     cmds:

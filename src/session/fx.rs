@@ -33,6 +33,17 @@ pub enum Fx {
         /// Lifetime.
         dur: f32,
     },
+    /// A little heart floating up: cheese! (a dash refill from a wedge).
+    Heart {
+        /// Center x, grid pixels.
+        x: f32,
+        /// Start y.
+        y: f32,
+        /// Seconds alive.
+        t: f32,
+        /// Lifetime.
+        dur: f32,
+    },
     /// Dust kicked up sideways from the feet: landings, rolls, skids.
     Dust {
         /// Feet center x.
@@ -63,9 +74,10 @@ impl Fx {
     /// Age by `dt`; false once it is gone.
     pub fn tick(&mut self, dt: f32) -> bool {
         let (t, dur) = match self {
-            Fx::Ring { t, dur, .. } | Fx::Ghost { t, dur, .. } | Fx::Dust { t, dur, .. } => {
-                (t, *dur)
-            }
+            Fx::Ring { t, dur, .. }
+            | Fx::Ghost { t, dur, .. }
+            | Fx::Dust { t, dur, .. }
+            | Fx::Heart { t, dur, .. } => (t, *dur),
         };
         *t += dt;
         *t < dur
@@ -74,9 +86,10 @@ impl Fx {
     /// How far through its life, 0..1.
     pub fn progress(&self) -> f32 {
         match *self {
-            Fx::Ring { t, dur, .. } | Fx::Ghost { t, dur, .. } | Fx::Dust { t, dur, .. } => {
-                (t / dur).clamp(0.0, 1.0)
-            }
+            Fx::Ring { t, dur, .. }
+            | Fx::Ghost { t, dur, .. }
+            | Fx::Dust { t, dur, .. }
+            | Fx::Heart { t, dur, .. } => (t / dur).clamp(0.0, 1.0),
         }
     }
 }
