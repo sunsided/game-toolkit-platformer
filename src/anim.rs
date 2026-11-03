@@ -20,6 +20,44 @@
 //!
 //! The controller never looks at the simulation, and the simulation never looks at it:
 //! a driver maps facts to parameters, the graph maps parameters to sprites.
+//!
+//! A small graph, compiled and run (the README shows the same one):
+//!
+//! ```
+//! use std::sync::Arc;
+//! use animation::anim::{Animator, Clip, Cond, GraphSpec, Playback, StateSpec, TransitionSpec};
+//!
+//! let graph = GraphSpec::new()
+//!     .float("speed")
+//!     .trigger("jump", 0.05)
+//!     .state(StateSpec::new("idle", Clip::uniform(Playback::PingPong, &[0, 1], 0.5)))
+//!     .state(
+//!         StateSpec::new("run", Clip::uniform(Playback::Loop, &[2, 3, 4, 5], 0.08).marker(0, "step"))
+//!             .rate_by("speed", 90.0, 0.4, 1.6),
+//!     )
+//!     .state(StateSpec::new("takeoff", Clip::uniform(Playback::Once, &[7], 0.06)).then("idle"))
+//!     .transition(TransitionSpec::new(["idle"], "run", Cond::Above("speed".into(), 10.0)))
+//!     .transition(TransitionSpec::new(["run"], "idle", Cond::Below("speed".into(), 10.0)))
+//!     .transition(
+//!         TransitionSpec::any("takeoff", Cond::Trigger("jump".into()))
+//!             .priority(70)
+//!             .breaks_lock(),
+//!     )
+//!     .compile()
+//!     .expect("a valid graph");
+//!
+//! let mut animator = Animator::new(Arc::new(graph));
+//! let (speed, jump) = (animator.params.id("speed").unwrap(), animator.params.id("jump").unwrap());
+//!
+//! // Each step, a driver writes the parameters, then the animator runs.
+//! animator.params.set_float(speed, 60.0);
+//! animator.update(1.0 / 120.0);
+//! assert_eq!(animator.state_name(), "run");
+//!
+//! animator.params.fire(jump);
+//! animator.update(1.0 / 120.0);
+//! assert_eq!((animator.state_name(), animator.sprite()), ("takeoff", 7));
+//! ```
 
 pub mod animator;
 pub mod clip;
