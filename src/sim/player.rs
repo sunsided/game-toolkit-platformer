@@ -22,7 +22,7 @@ mod jump;
 mod land;
 mod super_dash;
 
-use super::{Event, Intent, JumpKind, Rect, Terrain, Tuning};
+use super::{Event, Intent, JumpKind, Moves, Rect, Terrain, Tuning};
 
 /// The default hitbox width in units ([`Tuning::size`] sets it per character).
 pub const W: i32 = 6;
@@ -33,28 +33,6 @@ pub const H: i32 = 12;
 /// in whole units moves 1, 0, 1, 0 units per step at half a unit per step; smoothed, that
 /// reads as the steady speed it is.
 pub const LIFT_SMOOTHING: f32 = 0.1;
-
-/// The hero's hold on a block, decided by the world each step before the hero moves.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Shove {
-    /// No block involved.
-    None,
-    /// Grabbing a block on `side` without moving.
-    Hold {
-        /// Side of the block, -1 or 1.
-        side: i32,
-    },
-    /// Walking into a block on `side`, pushing it.
-    Push {
-        /// Side of the block.
-        side: i32,
-    },
-    /// Grabbing a block on `side` and walking away, pulling it.
-    Pull {
-        /// Side of the block.
-        side: i32,
-    },
-}
 
 /// What the body is busy with, beyond plain running and jumping. New moves bring new
 /// modes, so matches need a `_` arm.
@@ -109,8 +87,9 @@ pub enum Mode {
     /// A move of your own ([`super::Ability`]) has the body: no built-in move starts or
     /// runs, no gravity; it still moves by its speed, collides and lands.
     Custom {
-        /// Which of your moves, by a number of your choosing.
-        id: u16,
+        /// Which of your moves, by a number of your choosing (the same kind of number as
+        /// [`Event::Custom`]).
+        id: u32,
         /// Seconds since it started (counted by the movement).
         t: f32,
     },
@@ -179,11 +158,6 @@ pub struct Player {
     pub look: i32,
     /// Seconds the current look has been held.
     pub look_time: f32,
-    /// The hold on a block this step (set by the world).
-    pub shove: Shove,
-    /// How far the block has given, 0 (stuck) to 1 (sliding freely); scales push and
-    /// pull speed (set by the world).
-    pub shove_give: f32,
     /// A jump was pressed in the air and is still held: falling, it glides.
     glide_armed: bool,
     /// Gliding.
@@ -235,8 +209,6 @@ impl Player {
             regrab: 0.0,
             look: 0,
             look_time: 0.0,
-            shove: Shove::None,
-            shove_give: 0.0,
             glide_armed: false,
             gliding: false,
             was_down: false,
@@ -310,11 +282,13 @@ impl Player {
         (self.x as f32 + self.rem_x, self.y as f32 + self.rem_y)
     }
 
-    /// One step of `dt` seconds (see the module docs for the order).
+    /// One step of `dt` seconds (see the module docs for the order), with the built-in
+    /// moves `moves` allows.
     pub fn step(
         &mut self,
         level: &dyn Terrain,
         i: &Intent,
+        moves: &Moves,
         t: &Tuning,
         dt: f32,
         ev: &mut Vec<Event>,
@@ -326,15 +300,25 @@ impl Player {
         };
         self.tick_timers(i, t, dt, ev);
         self.tick_mode(t, dt, ev);
-        self.try_dash(i, t, ev);
-        self.try_dive(i, t, ev);
+        if moves.dash {
+            self.try_dash(i, t, ev);
+        }
+        if moves.dive {
+            self.try_dive(i, t, ev);
+        }
         self.dive_motion(t);
-        self.climb(level, i, t, dt, ev);
-        self.super_dash(level, i, t, ev);
-        self.run(level, move_x, t.sprint && i.sprint, t, dt);
+        // What's ruled out acts as if its button weren't held: a climb lets go.
+        let held = Intent {
+            grab: i.grab && moves.climb,
+            super_dash: i.super_dash && moves.super_dash,
+            ..*i
+        };
+        self.climb(level, &held, t, dt, ev);
+        self.super_dash(level, &held, t, ev);
+        self.run(level, move_x, t.sprint && i.sprint, moves.max_run, t, dt);
         let airborne = !self.grounded && self.coyote <= 0.0;
         let before = ev.len();
-        let jumped = self.jump(level, i, move_x, t, ev);
+        let jumped = moves.jump && self.jump(level, i, move_x, t, ev);
         let off_wall = ev[before..].iter().any(|e| {
             matches!(
                 e,
@@ -347,7 +331,7 @@ impl Player {
         if i.jump_pressed && airborne && !off_wall {
             self.glide_armed = true;
         }
-        if !i.jump_held || self.mode != Mode::Normal {
+        if !i.jump_held || self.mode != Mode::Normal || !moves.glide {
             self.glide_armed = false;
         }
         self.fall(level, i, move_x, t, dt, ev);
@@ -522,8 +506,16 @@ impl Player {
     }
 
     /// Horizontal speed: rolls keep their speed, recoveries brake, dashes, dives and climbs
-    /// set their own, otherwise accelerate toward the stick.
-    fn run(&mut self, level: &dyn Terrain, move_x: f32, sprint: bool, t: &Tuning, dt: f32) {
+    /// set their own, otherwise accelerate toward the stick, up to `max_run` at most.
+    fn run(
+        &mut self,
+        level: &dyn Terrain,
+        move_x: f32,
+        sprint: bool,
+        max_run: f32,
+        t: &Tuning,
+        dt: f32,
+    ) {
         let side = self.wall_slide;
         if self.mode == Mode::Normal
             && side != 0
@@ -550,18 +542,9 @@ impl Player {
             | Mode::SuperDash { .. }
             | Mode::Custom { .. } => {}
             Mode::Normal => {
-                let top = match self.shove {
-                    Shove::None if sprint => t.sprint_speed,
-                    Shove::None => t.run_speed,
-                    Shove::Push { .. } => t.push_speed * self.shove_give,
-                    Shove::Pull { .. } => t.pull_speed * self.shove_give,
-                    Shove::Hold { .. } => 0.0,
-                };
-                match self.shove {
-                    // Facing stays on the block while holding it.
-                    Shove::Pull { side } | Shove::Hold { side } => self.facing = side,
-                    _ if move_x != 0.0 => self.facing = move_x.signum() as i32,
-                    _ => {}
+                let top = if sprint { t.sprint_speed } else { t.run_speed }.min(max_run);
+                if move_x != 0.0 {
+                    self.facing = move_x.signum() as i32;
                 }
                 let target = move_x * top;
                 let accel = if move_x == 0.0 {

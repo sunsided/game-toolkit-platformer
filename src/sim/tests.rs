@@ -941,108 +941,6 @@ fn holding_up_or_down_standing_still_looks() {
     assert_eq!(w.player.look, 0, "not while moving");
 }
 
-/// A room with a block on the floor at tile x 6, the hero standing left of it.
-fn with_block() -> Sim {
-    let mut w = world(room(&[(14, 6, "B")]));
-    w.player.x = 6 * TILE - 2 - player::W - 4;
-    run(&mut w, Intent::default(), 3);
-    w
-}
-
-#[test]
-fn walking_into_a_block_pushes_it_slowly() {
-    let mut w = with_block();
-    let start = w.level.blocks[0].x;
-    run(
-        &mut w,
-        Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        },
-        120,
-    );
-    let moved = w.level.blocks[0].x - start;
-    assert!(moved > 20, "pushed {moved}");
-    assert_eq!(w.player.shove, Shove::Push { side: 1 });
-    assert!(w.player.vx <= Tuning::default().push_speed + 0.5);
-    assert!(moved < 60, "slower than running: {moved}");
-}
-
-#[test]
-fn grabbing_a_block_holds_it_and_walking_away_pulls_it() {
-    let mut w = with_block();
-    run(
-        &mut w,
-        Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        },
-        20,
-    );
-    let start = w.level.blocks[0].x;
-    let grab = Intent {
-        grab: true,
-        ..Intent::default()
-    };
-    run(&mut w, grab, 5);
-    assert_eq!(w.player.shove, Shove::Hold { side: 1 });
-    assert_eq!(
-        w.player.mode,
-        Mode::Normal,
-        "grab at a block doesn't climb it"
-    );
-    run(
-        &mut w,
-        Intent {
-            move_x: -1.0,
-            ..grab
-        },
-        120,
-    );
-    assert_eq!(w.player.shove, Shove::Pull { side: 1 });
-    assert_eq!(w.player.facing, 1, "still facing the block");
-    assert!(
-        w.level.blocks[0].x < start - 12,
-        "pulled from {start} to {}",
-        w.level.blocks[0].x
-    );
-    assert!(w.player.wall(&w.level, 1), "the block stays at the hand");
-}
-
-#[test]
-fn blocks_fall_off_ledges_and_can_be_stood_on() {
-    // A block on a shelf edge; push it off, then jump onto it.
-    let mut w = world(room(&[(10, 1, "######"), (9, 5, "B")]));
-    w.player.x = 2 * TILE;
-    w.player.y = 10 * TILE - player::H;
-    run(
-        &mut w,
-        Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        },
-        200,
-    );
-    assert!(w.level.blocks[0].grounded);
-    assert_eq!(w.level.blocks[0].y, 15 * TILE - block::SIZE, "on the floor");
-    let mut w = world(room(&[(14, 4, "B")]));
-    jump(&mut w, 30, 0);
-    run(
-        &mut w,
-        Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        },
-        18,
-    );
-    run(&mut w, Intent::default(), 90);
-    assert_eq!(
-        w.player.y + player::H,
-        w.level.blocks[0].y,
-        "standing on the block"
-    );
-}
-
 /// Wall-jump repeatedly holding toward a single wall at tile x 10 for `steps` steps;
 /// the height gained in pixels.
 fn scale_wall(t: Tuning, steps: usize) -> i32 {
@@ -1225,43 +1123,6 @@ fn celeste_walls_do_not_give_the_dash_back() {
 }
 
 #[test]
-fn blocks_stick_before_they_budge() {
-    let mut w = with_block();
-    // Walk up to it, until the first step of pushing.
-    while !matches!(w.player.shove, Shove::Push { .. }) {
-        w.step(&Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        });
-    }
-    let start = w.level.blocks[0].x;
-    let mut pushed = 0;
-    for _ in 0..24 {
-        // Under the 0.25 s breakaway: strained, not moved.
-        w.step(&Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        });
-        pushed = w.level.blocks[0].x - start;
-    }
-    let t = Tuning::default();
-    assert!(w.effort > 0.0 && w.effort < t.push_breakaway + 0.02);
-    assert!(pushed <= 1, "budged early: {pushed}");
-    run(
-        &mut w,
-        Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        },
-        90,
-    );
-    assert!(w.level.blocks[0].x - start > 15, "then it slides");
-    // Letting go resets the effort: it sticks again.
-    run(&mut w, Intent::default(), 2);
-    assert_eq!(w.effort, 0.0);
-}
-
-#[test]
 fn holding_a_jump_pressed_in_the_air_glides() {
     let t = Preset::Drifter.tuning();
     let mut w = Sim::new(room(&[]), t);
@@ -1342,27 +1203,6 @@ fn tapping_down_while_sprinting_rolls() {
         60,
     );
     assert!(!ev.contains(&Event::RollStarted));
-}
-
-#[test]
-fn a_block_rumbles_while_it_sticks() {
-    let mut w = with_block();
-    while !matches!(w.player.shove, Shove::Push { .. }) {
-        w.step(&Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        });
-    }
-    assert_eq!(w.straining(), Some(0));
-    run(
-        &mut w,
-        Intent {
-            move_x: 1.0,
-            ..Intent::default()
-        },
-        40,
-    );
-    assert_eq!(w.straining(), None, "it budged");
 }
 
 #[test]
@@ -1815,4 +1655,217 @@ fn a_cloned_world_with_abilities_plays_out_identically() {
     assert_eq!(a.player, b.player);
     assert_eq!(ea, eb);
     assert!(ea.iter().any(|e| matches!(e, Event::Custom(_))));
+}
+
+/// While custom button 0 is held: no dashes, no wall grabs, walking at 20 units/s at most.
+#[derive(Clone, Debug)]
+struct Laden;
+
+impl Ability for Laden {
+    fn before(&mut self, s: &mut Step<'_>) {
+        if s.intent.held(0) {
+            s.moves.dash = false;
+            s.moves.climb = false;
+            s.moves.max_run = 20.0;
+        }
+    }
+}
+
+#[test]
+fn an_ability_rules_out_single_built_in_moves() {
+    let mut w = world(room(&[]));
+    w.abilities.push(Box::new(Laden));
+    let laden = Intent {
+        move_x: 1.0,
+        custom: 1,
+        ..Intent::default()
+    };
+    let ev = run(&mut w, laden, 60);
+    assert!(
+        (w.player.vx - 20.0).abs() < 0.01,
+        "walks slowly: {}",
+        w.player.vx
+    );
+    assert!(!ev.iter().any(|e| matches!(e, Event::Jumped { .. })));
+    let ev = run(
+        &mut w,
+        Intent {
+            dash_pressed: true,
+            ..laden
+        },
+        1,
+    );
+    assert!(
+        !ev.iter().any(|e| matches!(e, Event::Dashed { .. })),
+        "{ev:?}"
+    );
+    // Jumping is still allowed.
+    let ev = run(
+        &mut w,
+        Intent {
+            jump_pressed: true,
+            jump_held: true,
+            ..laden
+        },
+        1,
+    );
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::Jumped { .. })),
+        "{ev:?}"
+    );
+    // Let go of the button: the dash press, still buffered, fires now.
+    let ev = run(&mut w, Intent::default(), 1);
+    assert!(
+        ev.iter().any(|e| matches!(e, Event::Dashed { .. })),
+        "{ev:?}"
+    );
+}
+
+#[test]
+fn a_ruled_out_grab_lets_go_of_the_wall() {
+    let t = Preset::Precise.tuning();
+    let mut w = at_wall(1..15, 10 * TILE, t);
+    w.abilities.push(Box::new(Laden));
+    let grab = Intent {
+        move_x: 1.0,
+        grab: true,
+        ..Intent::default()
+    };
+    run(&mut w, grab, 2);
+    assert_eq!(w.player.mode, Mode::Climb);
+    let ev = run(&mut w, Intent { custom: 1, ..grab }, 1);
+    assert_ne!(w.player.mode, Mode::Climb);
+    assert!(ev.contains(&Event::LetGo), "{ev:?}");
+}
+
+/// Custom button 0 digs out the floor tile under the feet; the after hook reports
+/// whether it is still gone.
+#[derive(Clone, Debug, Default)]
+struct Dig {
+    /// Tiles dug so far.
+    dug: u32,
+}
+
+impl Ability for Dig {
+    fn before(&mut self, s: &mut Step<'_>) {
+        if !s.intent.pressed(0) {
+            return;
+        }
+        let r = s.player.rect();
+        if let Some(level) = s.terrain.find_mut::<Level>() {
+            let (tx, ty) = (
+                (r.x + r.w / 2).div_euclid(TILE),
+                r.bottom().div_euclid(TILE),
+            );
+            level.set(tx, ty, Tile::Empty);
+            self.dug += 1;
+            s.events.push(Event::Custom(self.dug));
+        }
+    }
+}
+
+#[test]
+fn an_ability_edits_the_terrain_within_the_step() {
+    let mut w = world(room(&[]));
+    // Standing within one floor tile, so digging it out leaves nothing under the feet.
+    w.player.x = 5 * TILE + 1;
+    run(&mut w, Intent::default(), 3);
+    assert!(w.player.grounded);
+    w.abilities.push(Box::new(Dig::default()));
+    w.step(&Intent {
+        custom_pressed: 1,
+        ..Intent::default()
+    });
+    assert!(w.events.contains(&Event::Custom(1)));
+    assert_eq!(w.level.tile(5, 15), Tile::Empty);
+    assert!(!w.player.grounded, "fell into the hole in the same step");
+    assert!(w.events.contains(&Event::LeftGround), "{:?}", w.events);
+}
+
+#[test]
+fn a_cloned_world_editing_its_terrain_plays_out_identically() {
+    let mut a = world(Level::demo());
+    a.abilities.push(Box::new(Dig::default()));
+    let script = |k: u64| Intent {
+        move_x: if k % 120 < 70 { 1.0 } else { -1.0 },
+        custom_pressed: u32::from(k.is_multiple_of(41)),
+        jump_pressed: k.is_multiple_of(67),
+        jump_held: k % 67 < 25,
+        ..Intent::default()
+    };
+    for k in 0..100 {
+        a.step(&script(k));
+    }
+    let mut b = a.clone();
+    for k in 100..700 {
+        a.step(&script(k));
+        b.step(&script(k));
+        assert_eq!(a.world.events, b.events);
+    }
+    assert_eq!(a.player, b.player);
+    assert_eq!(a.level, b.level);
+    assert_ne!(a.level, Level::demo(), "it dug");
+}
+
+/// A terrain built on another, overriding nothing but `solid` (which it answers the same).
+struct Wrapped<T> {
+    /// The terrain it builds on.
+    inner: T,
+}
+
+impl<T: Terrain> Terrain for Wrapped<T> {
+    fn solid(&self, r: Rect) -> bool {
+        self.inner.solid(r)
+    }
+    fn base(&self) -> Option<&dyn Terrain> {
+        Some(&self.inner)
+    }
+    fn base_mut(&mut self) -> Option<&mut dyn Terrain> {
+        Some(&mut self.inner)
+    }
+}
+
+#[test]
+fn a_wrapper_plays_out_like_its_base() {
+    // The demo level: platforms, refills, falling out, the update.
+    let script = |k: u64| Intent {
+        move_x: if k % 300 < 200 { 1.0 } else { -0.5 },
+        jump_pressed: k.is_multiple_of(45),
+        jump_held: k % 45 < 30,
+        dash_pressed: k % 90 == 20,
+        move_y: if k % 200 == 150 { 1.0 } else { -0.4 },
+        ..Intent::default()
+    };
+    let mut level = Level::demo();
+    let mut wrapped = Wrapped {
+        inner: Level::demo(),
+    };
+    let mut a = World::on(&level, Tuning::default());
+    let mut b = a.clone();
+    let mut seen = Vec::new();
+    for k in 0..1500 {
+        a.step(&mut level, &script(k));
+        b.step(&mut wrapped, &script(k));
+        assert_eq!(a.events, b.events, "step {k}");
+        seen.extend(a.events.iter().copied());
+    }
+    assert_eq!(a.player, b.player);
+    assert_eq!(level, wrapped.inner);
+    assert!(
+        seen.contains(&Event::Recharged { crystal: true }),
+        "used a refill"
+    );
+
+    // Moving ground: carry is forwarded too.
+    let e = Elevator::new(40, 150, (0.0, -30.0));
+    let mut a = on_elevator(&e, Tuning::default());
+    let mut b = a.clone();
+    let mut bare = e.clone();
+    let mut wrapped = Wrapped { inner: e.clone() };
+    for _ in 0..60 {
+        a.step(&mut bare, &Intent::default());
+        b.step(&mut wrapped, &Intent::default());
+    }
+    assert_eq!(a.player, b.player);
+    assert!(a.player.y <= e.plat.y - player::H - 10, "carried up");
 }

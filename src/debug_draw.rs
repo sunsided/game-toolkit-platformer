@@ -8,7 +8,7 @@ use crate::Platformer;
 use crate::sim::{Level, TILE, Tile};
 
 impl Level {
-    /// Draw the tiles, the dash refills that are there and the boxes with `p`, the level's
+    /// Draw the tiles and the dash refills that are there with `p`, the level's
     /// top-left at `origin` (window pixels), `scale` window pixels per unit.
     pub fn draw_debug(&self, p: &mut Painter<'_>, origin: [f32; 2], scale: f32) {
         let at = |x: f32, y: f32| [origin[0] + x * scale, origin[1] + y * scale];
@@ -46,14 +46,6 @@ impl Level {
                 at(a.x as f32 + 2.0, a.y as f32 + 2.0),
                 [4.0 * scale, 4.0 * scale],
                 Color::rgb8(253, 196, 67),
-            );
-        }
-        for b in &self.blocks {
-            let r = b.rect();
-            p.rect(
-                at(r.x as f32, r.y as f32),
-                [r.w as f32 * scale, r.h as f32 * scale],
-                Color::rgb8(154, 106, 58),
             );
         }
     }

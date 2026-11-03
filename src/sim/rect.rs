@@ -23,6 +23,17 @@ impl Rect {
         }
     }
 
+    /// The box `k` times as large, from the origin: units to pixels at `k` pixels per
+    /// unit.
+    pub fn scaled(self, k: i32) -> Self {
+        Self {
+            x: self.x * k,
+            y: self.y * k,
+            w: self.w * k,
+            h: self.h * k,
+        }
+    }
+
     /// One past the right edge.
     pub fn right(self) -> i32 {
         self.x + self.w

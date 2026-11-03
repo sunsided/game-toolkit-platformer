@@ -4,6 +4,8 @@
 //! (re-exported here as [`sim`], [`anim`] and [`hero`]); this crate adds what a game puts
 //! around them:
 //!
+//! - [`stage`]: the demo's terrain: the library's level with boxes to push and pull (a
+//!   move of the demo's own, on the library's ability hooks) and a lift.
 //! - [`session`]: a game in progress: the library's world and animator plus a fixed clock
 //!   with slow motion, effects, wind, plants and the cape rig.
 //! - [`gfx`]: the 384x216 pixel grid: [`gfx::Raster`], CPU [`gfx::Canvas`], GPU-bound
@@ -26,3 +28,4 @@ pub mod app;
 pub mod gfx;
 pub mod render;
 pub mod session;
+pub mod stage;

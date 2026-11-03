@@ -22,6 +22,8 @@
 //! let _frame = hero.sprite();
 //! ```
 
+mod scaled;
+
 use std::sync::Arc;
 
 #[cfg(test)]
@@ -31,8 +33,10 @@ use crate::anim::{AnimEvent, Animator, Driver, GraphSpec, SpecError};
 use crate::controls::{Controls, Scheme};
 use crate::hero::{HeroDriver, spec};
 use crate::sim::{
-    Ability, DT, Event, Intent, Level, Player, Preset, Rect, TILE, Terrain, Tuning, World,
+    Ability, DT, Event, Intent, Level, Mode, Player, Preset, Rect, TILE, Terrain, Tuning, World,
 };
+
+pub(crate) use scaled::Scaled;
 
 /// At most this many fixed steps per frame, so a hitch doesn't spiral.
 const MAX_STEPS: u32 = 8;
@@ -62,6 +66,8 @@ pub struct Platformer {
     drivers: Vec<Box<dyn Driver<World>>>,
     /// The preset the tuning came from, if any.
     preset: Option<Preset>,
+    /// Pixels of your terrain per unit of the movement (see [`Builder::scale`]).
+    scale: i32,
     /// Frame time not yet stepped.
     acc: f32,
     /// Presses seen since the last step.
@@ -80,10 +86,17 @@ pub struct Platformer {
 /// Where a [`Builder`] puts the character.
 #[derive(Clone, Copy, Debug)]
 enum Spawn {
-    /// The hitbox's top-left, units.
+    /// The hitbox's top-left, in the terrain's pixels.
     At(i32, i32),
-    /// Standing on `floor`, centered on `x` (units).
+    /// Standing on `floor`, centered on `x`, in the terrain's pixels.
     Standing {
+        /// The feet's center.
+        x: i32,
+        /// The top of the ground.
+        floor: i32,
+    },
+    /// Standing on `floor`, centered on `x`, in units (a [`Level`]'s spawn tile).
+    Units {
         /// The feet's center.
         x: i32,
         /// The top of the ground.
@@ -111,6 +124,8 @@ pub struct Builder {
     spawn: Spawn,
     /// Put it back at the start after falling out.
     respawn: bool,
+    /// Pixels of the terrain per unit.
+    scale: i32,
     /// The control scheme, or the preset's.
     #[cfg(feature = "toolkit")]
     scheme: Option<Scheme>,
@@ -179,14 +194,30 @@ impl Builder {
         self
     }
 
-    /// Start with the hitbox's top-left at `x, y` (units).
+    /// Your terrain speaks pixels, `k` of them per unit of the movement (default 1): with
+    /// 16-pixel tiles, say, `scale(2)`, so the feel made for 8-unit tiles fits. The
+    /// character then converts at its edges: the terrain is asked in your pixels, and
+    /// positions ([`Platformer::position`], [`Platformer::hitbox`], spawn points,
+    /// teleports) and speeds ([`Platformer::velocity`], [`Platformer::launch`]) are in
+    /// them too. [`Platformer::world`], the [`Tuning`], events and drivers stay in units.
+    ///
+    /// A [`Level`] already speaks units: keep the scale at 1 with one and draw it scaled.
+    pub fn scale(mut self, k: i32) -> Self {
+        assert!(k >= 1, "a scale of {k} pixels per unit");
+        self.scale = k;
+        self
+    }
+
+    /// Start with the hitbox's top-left at `x, y` (units, or pixels with a
+    /// [`Builder::scale`]).
     pub fn spawn_at(mut self, x: i32, y: i32) -> Self {
         self.spawn = Spawn::At(x, y);
         self
     }
 
     /// Start standing on the ground at height `floor_y` (its top edge), centered on `x`
-    /// (units): the way to spawn on a [`Terrain`] of your own.
+    /// (units, or pixels with a [`Builder::scale`]): the way to spawn on a [`Terrain`] of
+    /// your own.
     pub fn spawn_standing(mut self, x: i32, floor_y: i32) -> Self {
         self.spawn = Spawn::Standing { x, floor: floor_y };
         self
@@ -195,7 +226,10 @@ impl Builder {
     /// Start standing on `level`'s spawn tile.
     pub fn spawn_on(mut self, level: &Level) -> Self {
         let (tx, ty) = level.spawn;
-        self = self.spawn_standing(tx * TILE + TILE / 2, (ty + 1) * TILE);
+        self.spawn = Spawn::Units {
+            x: tx * TILE + TILE / 2,
+            floor: (ty + 1) * TILE,
+        };
         self
     }
 
@@ -222,9 +256,13 @@ impl Builder {
             (true, false) => Some(HeroDriver::try_new(&animator.params)?),
             (true, true) => Some(HeroDriver::declaring(&mut animator.params)),
         };
+        let k = self.scale;
         let spawn = match self.spawn {
-            Spawn::At(x, y) => (x, y),
-            Spawn::Standing { x, floor } => Player::standing_at(x, floor, self.tuning.size),
+            Spawn::At(x, y) => (x.div_euclid(k), y.div_euclid(k)),
+            Spawn::Standing { x, floor } => {
+                Player::standing_at(x.div_euclid(k), floor.div_euclid(k), self.tuning.size)
+            }
+            Spawn::Units { x, floor } => Player::standing_at(x, floor, self.tuning.size),
         };
         let mut world = World::new(self.tuning, spawn);
         world.respawn = self.respawn;
@@ -236,6 +274,7 @@ impl Builder {
             driver,
             drivers: self.drivers,
             preset: self.preset,
+            scale: k,
             acc: 0.0,
             latch: Intent::default(),
             events: Vec::new(),
@@ -261,12 +300,23 @@ impl Platformer {
     }
 
     /// A character with its hitbox's top-left at `x, y` (units), otherwise like
-    /// [`Platformer::on`]. On a terrain of your own, [`Builder::spawn_standing`] works out
+    /// [`Platformer::on`]. On a terrain of your own, [`Platformer::standing`] works out
     /// the top-left from where the feet go.
     pub fn at(x: i32, y: i32, preset: Preset) -> Self {
         Self::builder()
             .preset(preset)
             .spawn_at(x, y)
+            .build()
+            .expect("the built-in animation graph fits the built-in driver")
+    }
+
+    /// A character standing on the ground at height `floor_y` (its top edge), centered on
+    /// `x` (units), otherwise like [`Platformer::on`]: the one-liner for a terrain of your
+    /// own (see [`Builder::spawn_standing`]).
+    pub fn standing(x: i32, floor_y: i32, preset: Preset) -> Self {
+        Self::builder()
+            .preset(preset)
+            .spawn_standing(x, floor_y)
             .build()
             .expect("the built-in animation graph fits the built-in driver")
     }
@@ -283,6 +333,7 @@ impl Platformer {
             abilities: Vec::new(),
             spawn: Spawn::At(0, 0),
             respawn: true,
+            scale: 1,
             #[cfg(feature = "toolkit")]
             scheme: None,
         }
@@ -340,8 +391,21 @@ impl Platformer {
     /// replays, tests).
     pub fn step(&mut self, intent: &Intent, terrain: &mut dyn Terrain) {
         self.begin_step();
-        self.world.step(terrain, intent);
+        if self.scale == 1 {
+            self.world.step(terrain, intent);
+        } else {
+            let mut scaled = Scaled {
+                inner: terrain,
+                k: self.scale,
+            };
+            self.world.step(&mut scaled, intent);
+        }
         self.end_step();
+    }
+
+    /// Pixels of the terrain per unit of the movement (see [`Builder::scale`]).
+    pub fn scale(&self) -> i32 {
+        self.scale
     }
 
     /// Set the clock's leftover time (a [`crate::Party`] keeps one clock for everyone), so
@@ -355,9 +419,16 @@ impl Platformer {
         self.prev = self.world.player.exact_pos();
     }
 
-    /// After a step: collect its events, drive the animation.
+    /// After a step: collect its events, drive the animation. A respawn in the step (the
+    /// character fell out) starts the animation over and snaps the drawing, as
+    /// [`Platformer::respawn`] does.
     pub(crate) fn end_step(&mut self) {
         self.events.extend(self.world.events.iter().copied());
+        if self.world.events.contains(&Event::Respawned) {
+            self.prev = self.world.player.exact_pos();
+            self.animator.reset();
+            return;
+        }
         if let Some(d) = &mut self.driver {
             d.drive(&self.world, &mut self.animator.params);
         }
@@ -394,7 +465,50 @@ impl Platformer {
         self.world.player.facing
     }
 
-    /// The hitbox's top-left in units, smoothly between fixed steps: where to draw.
+    /// Standing on something (the ground, a platform, moving ground, another character).
+    pub fn grounded(&self) -> bool {
+        self.world.player.grounded
+    }
+
+    /// The speed in units/s (pixels/s with a [`Builder::scale`]), y down.
+    pub fn velocity(&self) -> (f32, f32) {
+        let k = self.scale as f32;
+        (self.world.player.vx * k, self.world.player.vy * k)
+    }
+
+    /// What the body is busy with: running and jumping freely, dashing, climbing, a move
+    /// of your own, ...
+    pub fn mode(&self) -> Mode {
+        self.world.player.mode
+    }
+
+    /// Dashes left before touching the ground (or a refill) again.
+    pub fn dashes(&self) -> u8 {
+        self.world.player.dashes
+    }
+
+    /// Air jumps left.
+    pub fn air_jumps(&self) -> u8 {
+        self.world.player.air_jumps
+    }
+
+    /// Climbing stamina left (out of [`Tuning::stamina`]).
+    pub fn stamina(&self) -> f32 {
+        self.world.player.stamina
+    }
+
+    /// The side of the wall it holds on to or slides down (-1 left, 1 right), if any.
+    pub fn on_wall(&self) -> Option<i32> {
+        let p = &self.world.player;
+        match (p.mode, p.wall_slide) {
+            (Mode::Climb, _) => Some(p.facing),
+            (_, 0) => None,
+            (_, side) => Some(side),
+        }
+    }
+
+    /// The hitbox's top-left in units (pixels with a [`Builder::scale`]), smoothly between
+    /// fixed steps: where to draw.
     pub fn position(&self) -> (f32, f32) {
         self.position_at(self.acc)
     }
@@ -403,29 +517,37 @@ impl Platformer {
     pub(crate) fn position_at(&self, acc: f32) -> (f32, f32) {
         let (x, y) = self.world.player.exact_pos();
         let (px, py) = self.prev;
+        let k = self.scale as f32;
         if (x - px).abs() > 16.0 || (y - py).abs() > 16.0 {
-            return (x, y);
+            return (x * k, y * k);
         }
         let a = (acc / DT).clamp(0.0, 1.0);
-        (px + (x - px) * a, py + (y - py) * a)
+        ((px + (x - px) * a) * k, (py + (y - py) * a) * k)
     }
 
-    /// The hitbox in units, as of the last step.
+    /// The hitbox in units (pixels with a [`Builder::scale`]), as of the last step.
     pub fn hitbox(&self) -> Rect {
-        self.world.player.rect()
+        self.world.player.rect().scaled(self.scale)
+    }
+
+    /// A position in the terrain's pixels, in units.
+    fn units(&self, (x, y): (i32, i32)) -> (i32, i32) {
+        (x.div_euclid(self.scale), y.div_euclid(self.scale))
     }
 
     /// Set the speed from outside: a spring, a bounce pad, knockback (units/s, y down). It
     /// ends a dash or a climb, can't be cut by releasing jump, and going up leaves the
     /// ground. See [`Player::launch`](crate::sim::Player::launch).
     pub fn launch(&mut self, vx: f32, vy: f32) {
-        self.world.player.launch(vx, vy);
+        let k = self.scale as f32;
+        self.world.player.launch(vx / k, vy / k);
     }
 
     /// Put the hitbox's top-left at `x, y` (units) at once, without drawing it sliding
     /// there: a door, a portal. Speed and state stay; see
     /// [`Player::teleport`](crate::sim::Player::teleport).
     pub fn teleport(&mut self, x: i32, y: i32) {
+        let (x, y) = self.units((x, y));
         self.world.player.teleport(x, y);
         self.prev = self.world.player.exact_pos();
     }
@@ -433,13 +555,18 @@ impl Platformer {
     /// Start over at the spawn point: a fresh body, the animation from its entry state, and
     /// an [`Event::Respawned`]. For hazards; see [`Platformer::set_spawn`] for checkpoints.
     pub fn respawn(&mut self) {
-        self.respawn_at(self.world.spawn.0, self.world.spawn.1);
+        self.respawn_in_units(self.world.spawn);
     }
 
     /// Start over with the hitbox's top-left at `x, y` (units), like
     /// [`Platformer::respawn`], without moving the spawn point.
     pub fn respawn_at(&mut self, x: i32, y: i32) {
-        self.world.respawn_at((x, y));
+        self.respawn_in_units(self.units((x, y)));
+    }
+
+    /// [`Platformer::respawn_at`] with the hitbox's top-left `at` in units.
+    fn respawn_in_units(&mut self, at: (i32, i32)) {
+        self.world.respawn_at(at);
         self.events.push(Event::Respawned);
         self.prev = self.world.player.exact_pos();
         self.animator.reset();
@@ -449,13 +576,15 @@ impl Platformer {
     /// the ground), centered on `x`: for [`Platformer::set_spawn`],
     /// [`Platformer::teleport`] and [`Platformer::respawn_at`] on a terrain of your own.
     pub fn standing_at(&self, x: i32, floor_y: i32) -> (i32, i32) {
-        Player::standing_at(x, floor_y, self.world.tuning.size)
+        let (x, floor_y) = self.units((x, floor_y));
+        let (x, y) = Player::standing_at(x, floor_y, self.world.tuning.size);
+        (x * self.scale, y * self.scale)
     }
 
     /// Where [`Platformer::respawn`] (and falling out) puts the character from now on
     /// (hitbox top-left, units): a checkpoint.
     pub fn set_spawn(&mut self, x: i32, y: i32) {
-        self.world.spawn = (x, y);
+        self.world.spawn = self.units((x, y));
     }
 
     /// Refill dashes, air jumps and climbing stamina: a pickup, a checkpoint.
@@ -915,5 +1044,145 @@ mod tests {
         }
         assert!(events.contains(&Event::FellOut));
         assert!(!events.contains(&Event::Respawned), "respawning was off");
+    }
+    #[test]
+    fn standing_spawns_like_the_builder_route() {
+        let mut hero = Platformer::standing(50, 100, Preset::Snappy);
+        let built = Platformer::builder()
+            .preset(Preset::Snappy)
+            .spawn_standing(50, 100)
+            .build()
+            .unwrap();
+        assert_eq!(hero.hitbox(), built.hitbox());
+        assert_eq!(hero.preset(), Some(Preset::Snappy));
+        let events = idle(&mut hero);
+        assert!(hero.grounded(), "stands on the closure's floor at once");
+        assert!(events.is_empty(), "{events:?}");
+    }
+
+    #[test]
+    fn accessors_match_the_body() {
+        let mut hero = Platformer::at(20, 88, Preset::Precise);
+        let run = Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        };
+        for _ in 0..10 {
+            hero.advance(run, &mut floor, 1.0 / 60.0);
+        }
+        let p = &hero.world.player;
+        assert_eq!(hero.grounded(), p.grounded);
+        assert_eq!(hero.velocity(), (p.vx, p.vy));
+        assert!(hero.velocity().0 > 0.0);
+        assert_eq!(hero.mode(), p.mode);
+        assert_eq!(hero.dashes(), p.dashes);
+        assert_eq!(hero.air_jumps(), p.air_jumps);
+        assert_eq!(hero.stamina(), p.stamina);
+        assert_eq!(hero.on_wall(), None);
+
+        // Against a wall at x = 60, grabbing it.
+        let mut wall = |r: Rect| r.bottom() > 100 || r.right() > 60;
+        let grab = Intent {
+            move_x: 1.0,
+            grab: true,
+            ..Intent::default()
+        };
+        for _ in 0..30 {
+            hero.advance(grab, &mut wall, 1.0 / 60.0);
+        }
+        assert_eq!(hero.mode(), Mode::Climb, "{:?}", hero.hitbox());
+        assert_eq!(hero.on_wall(), Some(1));
+        assert!(hero.stamina() < hero.world.tuning.stamina);
+    }
+
+    #[test]
+    fn falling_out_starts_the_animation_over() {
+        // A floor up to x = 200, the character running off its end; the spawn on it.
+        struct Pit;
+        impl Terrain for Pit {
+            fn solid(&self, r: Rect) -> bool {
+                r.bottom() > 100 && r.x < 200
+            }
+            fn fell_out(&self, r: Rect) -> bool {
+                r.y > 300
+            }
+        }
+        let mut hero = Platformer::at(180, 88, Preset::Hybrid);
+        let run = Intent {
+            move_x: 1.0,
+            ..Intent::default()
+        };
+        let entry = {
+            let mut h = Platformer::at(20, 88, Preset::Hybrid);
+            h.respawn();
+            h.state().to_owned()
+        };
+        let mut respawned = false;
+        for _ in 0..600 {
+            hero.step(&run, &mut Pit);
+            if hero.drain_events().contains(&Event::Respawned) {
+                respawned = true;
+                break;
+            }
+            assert!(hero.world.tick < 590, "never fell out");
+        }
+        assert!(respawned);
+        assert_eq!(
+            hero.state(),
+            entry,
+            "from the entry state, as after respawn()"
+        );
+        assert_eq!(
+            hero.position(),
+            (180.0, 88.0),
+            "drawn at the spawn, not sliding there"
+        );
+    }
+    #[test]
+    fn a_scaled_terrain_plays_out_like_one_in_units() {
+        // The same room in units and in pixels at 2 per unit: a floor, a wall, a ledge.
+        let units = |r: Rect| r.bottom() > 100 || r.right() > 200 || (r.x < 60 && r.bottom() > 76);
+        let pixels =
+            |r: Rect| r.bottom() > 200 || r.right() > 400 || (r.x < 120 && r.bottom() > 152);
+        let mut a = Platformer::standing(100, 100, Preset::Snappy);
+        let mut b = Platformer::builder()
+            .preset(Preset::Snappy)
+            .scale(2)
+            .spawn_standing(200, 200)
+            .build()
+            .unwrap();
+        assert_eq!(b.hitbox(), a.hitbox().scaled(2));
+        let script = |k: u32| Intent {
+            move_x: if k % 120 < 70 { 1.0 } else { -1.0 },
+            jump_pressed: k.is_multiple_of(50),
+            jump_held: k % 50 < 25,
+            dash_pressed: k % 80 == 30,
+            grab: k % 200 > 150,
+            ..Intent::default()
+        };
+        for k in 0..600 {
+            a.advance(script(k), &mut units.clone(), 1.0 / 60.0);
+            b.advance(script(k), &mut pixels.clone(), 1.0 / 60.0);
+            assert_eq!(b.hitbox(), a.hitbox().scaled(2), "frame {k}");
+            assert_eq!(a.drain_events(), b.drain_events(), "frame {k}");
+            let ((ax, ay), (bx, by)) = (a.position(), b.position());
+            assert!((bx - 2.0 * ax).abs() < 1e-3 && (by - 2.0 * ay).abs() < 1e-3);
+            let ((avx, avy), (bvx, bvy)) = (a.velocity(), b.velocity());
+            assert!((bvx - 2.0 * avx).abs() < 1e-3 && (bvy - 2.0 * avy).abs() < 1e-3);
+        }
+
+        // In and out of the facade: pixels.
+        b.teleport(240, 100);
+        assert_eq!((b.hitbox().x, b.hitbox().y), (240, 100));
+        assert_eq!((b.world.player.x, b.world.player.y), (120, 50));
+        b.launch(-200.0, 0.0);
+        assert_eq!(b.velocity(), (-200.0, 0.0));
+        assert_eq!(b.world.player.vx, -100.0);
+        let (sx, sy) = b.standing_at(200, 200);
+        let (ux, uy) = a.standing_at(100, 100);
+        assert_eq!((sx, sy), (ux * 2, uy * 2));
+        b.set_spawn(sx, sy);
+        b.respawn();
+        assert_eq!((b.hitbox().x, b.hitbox().y), (sx, sy));
     }
 }

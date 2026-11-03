@@ -21,23 +21,23 @@
 //! ```
 
 pub mod ability;
-pub mod block;
 pub mod crystal;
 pub mod event;
 pub mod intent;
 pub mod level;
+pub mod moves;
 pub mod player;
 pub mod rect;
 pub mod terrain;
 pub mod tuning;
 
 pub use ability::{Ability, Step};
-pub use block::Block;
 pub use crystal::Crystal;
 pub use event::{Event, JumpKind};
 pub use intent::Intent;
 pub use level::{Level, TILE, Tile};
-pub use player::{Mode, Player, Shove};
+pub use moves::Moves;
+pub use player::{Mode, Player};
 pub use rect::Rect;
 pub use terrain::Terrain;
 pub use tuning::{Preset, Tuning};
@@ -58,11 +58,6 @@ pub struct World {
     /// Put it back at [`World::spawn`] when it falls out (an [`Event::FellOut`] is
     /// reported either way).
     pub respawn: bool,
-    /// Seconds the character has been pushing or pulling the same box the same way: boxes
-    /// stick until [`Tuning::push_breakaway`], then speed up over [`Tuning::push_ramp`].
-    pub effort: f32,
-    /// What the character shoved last step, to tell whether the effort carries on.
-    last_shove: Option<(Shove, usize)>,
     /// What it rode when it finished moving this step (see [`Player::riding`]), for
     /// [`World::settle`].
     riding: Option<Rect>,
@@ -82,8 +77,6 @@ impl World {
             tuning,
             spawn,
             respawn: true,
-            effort: 0.0,
-            last_shove: None,
             riding: None,
             tick: 0,
             events: Vec::new(),
@@ -108,40 +101,21 @@ impl World {
         self.settle(terrain, None);
     }
 
-    /// The first part of a step: the character moves (boxes, your abilities, the built-in
-    /// moves, refills), the terrain doesn't update yet.
+    /// The first part of a step: the character moves (your abilities, the built-in moves,
+    /// refills), the terrain doesn't update yet.
     pub fn act(&mut self, terrain: &mut dyn Terrain, intent: &Intent) {
         self.events.clear();
-        let shove = self.shove(&*terrain, intent);
-        let moving = matches!(shove, Some((Shove::Push { .. } | Shove::Pull { .. }, _)));
-        self.effort = if moving && shove == self.last_shove {
-            self.effort + DT
-        } else if moving {
-            DT
-        } else {
-            0.0
-        };
-        self.last_shove = shove;
-        // Static friction: nothing moves until the character has strained long enough.
-        let t = &self.tuning;
-        let give = ((self.effort - t.push_breakaway) / t.push_ramp.max(DT)).clamp(0.0, 1.0);
-        self.player.shove = shove.map_or(Shove::None, |(s, _)| s);
-        self.player.shove_give = give;
-        if let Some((Shove::Push { side }, id)) = shove {
-            // The box moves first; the character follows into the room it made.
-            let amount = side as f32 * self.tuning.push_speed * give * DT;
-            terrain.shove(id, amount, self.player.rect());
-        }
-        let before = self.player.x;
-        self.abilities(&*terrain, intent, |a, s| a.before(s));
-        self.player
-            .step(&*terrain, intent, &self.tuning, DT, &mut self.events);
-        self.abilities(&*terrain, intent, |a, s| a.after(s));
-        if let Some((Shove::Pull { .. }, id)) = shove {
-            // The box follows the character by as many units as it moved.
-            let dx = self.player.x - before;
-            terrain.shove(id, dx as f32, self.player.rect());
-        }
+        let mut moves = Moves::ALL;
+        self.abilities(terrain, intent, &mut moves, |a, s| a.before(s));
+        self.player.step(
+            &*terrain,
+            intent,
+            &moves,
+            &self.tuning,
+            DT,
+            &mut self.events,
+        );
+        self.abilities(terrain, intent, &mut moves, |a, s| a.after(s));
         let body = self.player.rect();
         if self.player.dashes < self.tuning.dashes && terrain.refill(body) {
             self.player.dashes = self.tuning.dashes;
@@ -177,8 +151,6 @@ impl World {
     /// and checkpoints; [`World::spawn`] stays as it is.
     pub fn respawn_at(&mut self, at: (i32, i32)) {
         self.player = Player::at(at, &self.tuning);
-        self.effort = 0.0;
-        self.last_shove = None;
         self.riding = None;
         self.events.push(Event::Respawned);
     }
@@ -186,8 +158,9 @@ impl World {
     /// Run `hook` of every ability.
     fn abilities(
         &mut self,
-        terrain: &dyn Terrain,
+        terrain: &mut dyn Terrain,
         intent: &Intent,
+        moves: &mut Moves,
         hook: fn(&mut dyn Ability, &mut Step<'_>),
     ) {
         let mut s = Step {
@@ -195,53 +168,13 @@ impl World {
             intent,
             terrain,
             tuning: &self.tuning,
+            moves,
             events: &mut self.events,
             dt: DT,
         };
         for a in &mut self.abilities {
             hook(a.as_mut(), &mut s);
         }
-    }
-
-    /// The box the character strains against but which hasn't budged yet, if any (by the
-    /// terrain's id): it may rumble.
-    pub fn straining(&self) -> Option<usize> {
-        let (_, i) = self.last_shove?;
-        (self.effort > 0.0 && self.effort < self.tuning.push_breakaway).then_some(i)
-    }
-
-    /// The character's hold on a box this step, and which box. Standing beside a box at
-    /// rest, walking into it pushes; holding grab facing it holds it, and walking away
-    /// pulls.
-    fn shove(&self, terrain: &dyn Terrain, i: &Intent) -> Option<(Shove, usize)> {
-        let p = &self.player;
-        if !self.tuning.push || !p.grounded || p.mode != Mode::Normal {
-            return None;
-        }
-        let mx = if i.move_x.abs() > 0.3 {
-            i.move_x.signum() as i32
-        } else {
-            0
-        };
-        for side in [p.facing, -p.facing] {
-            // Within 2 units: a box that just moved a unit ahead still counts.
-            let Some(b) = (1..=2).find_map(|d| terrain.pushable(p.rect().shifted(side * d, 0)))
-            else {
-                continue;
-            };
-            if mx == side {
-                return Some((Shove::Push { side }, b));
-            }
-            if i.grab && side == p.facing {
-                let s = if mx == -side {
-                    Shove::Pull { side }
-                } else {
-                    Shove::Hold { side }
-                };
-                return Some((s, b));
-            }
-        }
-        None
     }
 }
 

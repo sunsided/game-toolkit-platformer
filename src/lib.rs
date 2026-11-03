@@ -115,3 +115,8 @@ struct ReadmeDoctests;
 #[cfg(doctest)]
 #[doc = include_str!("../docs/hazards.md")]
 struct HazardsDoctests;
+
+/// The moving-platforms recipe's code, compiled as a doc test.
+#[cfg(doctest)]
+#[doc = include_str!("../docs/moving-platforms.md")]
+struct MovingPlatformsDoctests;

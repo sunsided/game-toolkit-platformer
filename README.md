@@ -94,7 +94,7 @@ let mut hero = Platformer::at(40, 100, Preset::Snappy);
 hero.advance(Intent::default(), &mut floor, 1.0 / 60.0);
 ```
 
-The other methods are optional: one-way platforms, dash refills, pushable boxes, falling out of the world, and a per-step `update` for anything that moves. `Level` is a ready-made `Terrain` with all of them: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `B` box, `P` spawn), `Level::from_fn` builds one from your tilemap, and `Level::parse_with` adds tiles of your own (spikes, water, goals) that the movement treats as air.
+The other methods are optional: one-way platforms, dash refills, falling out of the world, a per-step `update` and `carry` for moving ground. `Level` is a ready-made `Terrain`: `Level::parse` takes ASCII rows (`#` solid, `=` one-way platform, `*` dash refill, `P` spawn), `Level::from_fn` builds one from your tilemap, and `Level::parse_with` adds tiles of your own (spikes, water, goals) that the movement treats as air. To add doors, lifts or boxes, wrap a terrain and name it as the `base`: you write only what changes ([moving platforms](docs/moving-platforms.md) is a recipe). With 16-pixel tiles, `Builder::scale(2)` lets your terrain speak pixels.
 
 ## Drawing your character
 
@@ -108,7 +108,7 @@ To change the animation itself, pass your own graph with `.graph(spec)`; start f
 - in the air: a double jump, a glide, 8-way dashes with recharge, a dive,
 - on walls: sliding, sticking, stick-aimed wall jumps that can scale a wall, climbing with stamina,
 - on the ground: running and sprinting, rolls, hard landings, a charged super dash, drop-through platforms, looking up and down,
-- with boxes: pushing and pulling,
+- in the demo, on the ability hooks: pushing and pulling boxes, a lift,
 - details: corner correction, a skid when turning.
 
 | | |

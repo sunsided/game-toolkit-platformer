@@ -18,6 +18,7 @@ pub use mouse::Paint;
 use crate::gfx::{H, Raster, W, bayer, palette as pal};
 use crate::session::{Fx, FxColor, Session, Skin, Wind};
 use crate::sim::{Mode, Rect, TILE, player};
+use crate::stage::PushPull;
 
 /// Screen pixels per simulation unit.
 pub const K: i32 = 1;
@@ -40,7 +41,7 @@ pub fn scene(r: &mut dyn Raster, s: &Session, stars: &[Twinkle], clock: f32) {
     if s.skin == Skin::Mouse {
         twinkle(r, stars, clock);
     }
-    for c in &s.level.crystals {
+    for c in &s.stage.level.crystals {
         let a = px(c.area);
         let (cx, cy) = (a.x + TILE * K / 2, a.y + TILE * K / 2);
         let bob = ((clock * 3.0).sin() * 2.0).round() as i32;
@@ -53,8 +54,11 @@ pub fn scene(r: &mut dyn Raster, s: &Session, stars: &[Twinkle], clock: f32) {
             }
         }
     }
-    let rumble = s.world.straining();
-    for (i, b) in s.level.blocks.iter().enumerate() {
+    let rumble = s.stage.grip.straining(PushPull::default().breakaway);
+    for l in &s.stage.lifts {
+        lift(r, px(l.rect));
+    }
+    for (i, b) in s.stage.blocks.iter().enumerate() {
         let mut q = px(b.rect());
         if rumble == Some(i) {
             // Straining against it: it shudders a pixel each way and sheds a little dust.
@@ -250,6 +254,16 @@ fn crate_box(r: &mut dyn Raster, q: Rect) {
         (q.right() - 3, q.bottom() - 3),
     ] {
         r.put(x, y, pal::NAIL);
+    }
+}
+
+/// A lift: a plank platform with a lit top and the ends of its beams.
+fn lift(r: &mut dyn Raster, q: Rect) {
+    r.fill_rect(q.x, q.y, q.w, q.h, pal::PLANK);
+    r.span(q.x, q.right(), q.y, pal::PLANK_LT, 1.0);
+    r.span(q.x, q.right(), q.bottom() - 1, pal::PLANK_DK, 1.0);
+    for x in [q.x + q.w / 4, q.right() - q.w / 4 - 1] {
+        r.put(x, q.y + q.h / 2, pal::NAIL);
     }
 }
 

@@ -1,7 +1,7 @@
 //! [`HeroDriver`]: the simulation's facts and events as the hero graph's parameters.
 
 use crate::anim::{Driver, ParamId, ParamKind, Params, SpecError};
-use crate::sim::{Event, JumpKind, Mode, Shove, World};
+use crate::sim::{Event, JumpKind, Mode, World};
 
 /// Parameter ids of the hero graph, looked up once.
 #[derive(Clone, Debug)]
@@ -24,12 +24,6 @@ pub struct HeroDriver {
     hard_landing: ParamId,
     /// `wings`
     wings: ParamId,
-    /// `pushing`
-    pushing: ParamId,
-    /// `pulling`
-    pulling: ParamId,
-    /// `holding`
-    holding: ParamId,
     /// `gliding`
     gliding: ParamId,
     /// `super_bonk`
@@ -121,9 +115,6 @@ impl HeroDriver {
             wall_slide: id("wall_slide", B)?,
             hard_landing: id("hard_landing", B)?,
             wings: id("wings", B)?,
-            pushing: id("pushing", B)?,
-            pulling: id("pulling", B)?,
-            holding: id("holding", B)?,
             gliding: id("gliding", B)?,
             super_bonk: id("super_bonk", T)?,
             super_launch: id("super_launch", T)?,
@@ -169,9 +160,6 @@ impl Driver<World> for HeroDriver {
         p.set_bool(self.hard_landing, matches!(pl.mode, Mode::HardLand { .. }));
         p.set_bool(self.slipping, pl.slipping);
         p.set_bool(self.wings, w.tuning.wings);
-        p.set_bool(self.pushing, matches!(pl.shove, Shove::Push { .. }));
-        p.set_bool(self.pulling, matches!(pl.shove, Shove::Pull { .. }));
-        p.set_bool(self.holding, matches!(pl.shove, Shove::Hold { .. }));
         p.set_bool(self.gliding, pl.gliding);
         let charge = match pl.mode {
             Mode::SuperCharge { t, .. } => Some(t),

@@ -4,8 +4,14 @@
 //! An ability runs twice per step: [`Ability::before`] ahead of the built-in moves, and
 //! [`Ability::after`] once they moved the body. It may change anything public on the
 //! [`Player`] (speed, facing, refills, [`Player::launch`] and [`Player::teleport`]), read
-//! the [`Intent`] (your own buttons arrive in [`Intent::custom`]) and the terrain, and
-//! report [`Event::Custom`]s.
+//! the [`Intent`] (your own buttons arrive in [`Intent::custom`]), read and change the
+//! terrain (your own type through [`find_mut`](trait.Terrain.html#method.find_mut): break a
+//! block, flip a switch, use up a pickup; the movement sees the change at once), and report
+//! [`Event::Custom`]s.
+//!
+//! To rule out single built-in moves for a step (no dash while attacking, no wall grab
+//! while carrying, slow walking while pushing), clear them in [`Step::moves`] in
+//! [`Ability::before`].
 //!
 //! To take the body over for a while, put it in [`Mode::Custom`](super::Mode::Custom):
 //! no built-in move starts or runs then (no running, no gravity, no jumps or dashes), but
@@ -25,7 +31,7 @@
 //! struct Lunge;
 //!
 //! /// The lunge's mode and event id.
-//! const LUNGE: u16 = 1;
+//! const LUNGE: u32 = 1;
 //!
 //! impl Ability for Lunge {
 //!     fn before(&mut self, s: &mut Step<'_>) {
@@ -35,11 +41,13 @@
 //!                 p.mode = Mode::Custom { id: LUNGE, t: 0.0 };
 //!                 p.vx = 240.0 * p.facing as f32;
 //!                 p.vy = 0.0;
-//!                 s.events.push(Event::Custom(LUNGE.into()));
+//!                 s.events.push(Event::Custom(LUNGE));
 //!             }
 //!             Mode::Custom { id: LUNGE, t } if t >= 0.15 => p.mode = Mode::Normal,
 //!             _ => {}
 //!         }
+//!         // No dash out of the lunge's recovery, while custom button 0 is held.
+//!         s.moves.dash = !s.intent.held(0);
 //!     }
 //! }
 //!
@@ -52,7 +60,7 @@
 
 use std::fmt::Debug;
 
-use super::{Event, Intent, Player, Terrain, Tuning};
+use super::{Event, Intent, Moves, Player, Terrain, Tuning};
 
 /// What an [`Ability`] gets to work with in one step.
 pub struct Step<'a> {
@@ -60,10 +68,14 @@ pub struct Step<'a> {
     pub player: &'a mut Player,
     /// This step's input.
     pub intent: &'a Intent,
-    /// The world around it.
-    pub terrain: &'a dyn Terrain,
+    /// The world around it; changes count from here on, in this step too.
+    pub terrain: &'a mut dyn Terrain,
     /// The movement feel.
     pub tuning: &'a Tuning,
+    /// The built-in moves allowed this step: clear some in [`Ability::before`]. Changes in
+    /// [`Ability::after`] come too late for this step (and the next starts from
+    /// [`Moves::ALL`] again).
+    pub moves: &'a mut Moves,
     /// This step's events so far; push yours ([`Event::Custom`]).
     pub events: &'a mut Vec<Event>,
     /// The step's length in seconds ([`super::DT`]).
@@ -73,8 +85,8 @@ pub struct Step<'a> {
 /// A move of your own, run in every [`World::step`](super::World::step). Derive `Clone`
 /// and `Debug`; both hooks default to nothing.
 pub trait Ability: AbilityClone + Debug {
-    /// Ahead of the built-in moves (after the world decided on boxes): start your move,
-    /// steer it, end it.
+    /// Ahead of the built-in moves: start your move, steer it, end it; rule out built-in
+    /// moves ([`Step::moves`]).
     fn before(&mut self, _s: &mut Step<'_>) {}
 
     /// After the built-in moves, collision and landing: react to where the body ended up.

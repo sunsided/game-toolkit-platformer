@@ -32,6 +32,10 @@
   boxes on any terrain, custom tiles, a hazards recipe, custom drivers and partial graphs,
   a configurable hitbox, moving platforms (with squish), ability hooks, several characters
   (`Party`)
+- [x] Leaner core: terrains build on a `base` (only what changes is written), abilities
+  change the terrain and rule out single built-in moves, boxes moved into the demo as an
+  ability, a lift in the demo and a moving-platforms recipe, `Builder::scale` for bigger
+  tiles, facade accessors, `Platformer::standing`
 
 ## Next
 
@@ -45,7 +49,8 @@
 - [ ] Markers to sound: footsteps, dash, landing thuds (synthesized like Starscorcher)
 - [ ] An in-game graph inspector (current state, live transitions, why one didn't fire)
 - [ ] Lab: record intents, rewind and replay (determinism already holds)
-- [ ] Boxes in a `Party`: a shoved box is stopped by the terrain and the shover only
+- [ ] The demo's boxes in a `Party`: one grip per stage, and a shoved box is stopped by
+  the terrain and the shover only
 - [ ] More moves: ledge grab, crouch and slide (`Player::h` can change; check room to stand), super/hyper dashes, wall-jump coyote time,
   swimming and underwater diving
 - [ ] Camera with look-ahead and larger levels (looking up/down pans it, as in Hollow

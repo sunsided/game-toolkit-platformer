@@ -2,15 +2,18 @@
 
 All in `src/sim/`. Fixed step of 1/120 s, integer pixels with a sub-pixel remainder,
 moved one pixel at a time against 8 px tiles (`#` solid, `=` one-way platform,
-`*` dash crystal, `B` block). The hitbox is 6x12 by default (`Tuning::size`, read into
-`Player::w`/`h`; the other numbers stay in units and don't scale with it), blocks 12x12.
+`*` dash crystal). The hitbox is 6x12 by default (`Tuning::size`, read into
+`Player::w`/`h`; the other numbers stay in units and don't scale with it). A game with
+bigger tiles keeps the units and converts at the facade (`Builder::scale`).
 
 ## The demo level
 
 One screen, laid out around the debug overlay's corners: stairs of 3-tile steps (each
 within a plain held jump; `every_demo_stair_is_within_a_plain_jump` keeps it so) up to a
 tower, two chimneys in the middle for wall-jump bouncing (24 and 40 px inside), a low
-ceiling, a step to a ledge over the pit, a pillar to climb, crystals and two blocks.
+ceiling, a step to a ledge over the pit, a pillar to climb, crystals. The demo's own
+`Stage` (`demo/src/stage.rs`) adds two boxes (`B` in the rows) and a lift between the
+chimneys, up to the narrow one's lid, on top of the library's `Level`.
 
 ## Step order
 
@@ -23,13 +26,18 @@ the feel: a buffered jump is checked before gravity, the landing after moving.
 A game adds moves (an attack lunge, a ledge grab, a grapple, a pogo) as `sim::Ability`s
 in `World::abilities` (or `Builder::ability`), not by forking `sim/player`:
 
-- **When**: `before` runs ahead of the built-in moves each step (after the boxes are
-  decided), `after` once they moved, collided and landed. Several abilities run in the
-  order added.
+- **When**: `before` runs ahead of the built-in moves each step, `after` once they moved,
+  collided and landed. Several abilities run in the order added.
 - **What they touch**: the `Player`'s public state (speed, facing, refills, `launch`,
   `teleport`), the `Intent` (custom buttons in `custom`/`custom_pressed`, latched by the
-  facade), the terrain and the tuning, read-only. They report `Event::Custom(n)`.
-- **Modes**: `Mode::Custom { id, t }` takes the body over: no built-in move starts or runs
+  facade), the tuning (read-only) and the terrain: `step.terrain.find_mut::<YourType>()`
+  reaches your own terrain (through any wrappers whose `base` it is) to break a block or
+  flip a switch, and the movement sees the change in the same step. They report
+  `Event::Custom(n)`.
+- **Ruling out built-in moves**: `before` may clear moves in `step.moves` for this step
+  (`jump`, `dash`, `dive`, `climb`, `super_dash`, `glide`) and cap running (`max_run`): no
+  dash while attacking, no wall grab while carrying. Presses stay buffered.
+- **Modes**: `Mode::Custom { id, t }` (the `id` is a `u32`, like `Event::Custom`'s) takes the body over: no built-in move starts or runs
   (no running, gravity, jumps, dashes, climbing), but it still moves by its speed, collides,
   lands and rides moving ground, and `t` counts up. Setting `Mode::Normal` hands it back.
   Outside a custom mode, an ability works alongside the built-in moves (a pogo in
@@ -68,8 +76,13 @@ in `World::abilities` (or `Builder::ability`), not by forking `sim/player`:
 | Glide | a jump pressed in the air (not off a wall) and held opens a cloak once falling: the fall is capped at a slow drift. The press spends the air jump first if one is left, as in Silksong (Faydown Cloak, then Drifter's Cloak) | `glide`, `glide_fall_speed` |
 | Sprint | holding sprint raises the top speed; the extra speed carries into jumps (it only bleeds off slowly) | `sprint`, `sprint_speed` |
 | Run-and-roll | a fresh tap of down while faster than walking (sprinting) on the ground rolls, like a landing roll | `run_roll`, `run_roll_speed` |
-| Blocks | walking into a resting block pushes it (slowly); grab facing it holds it, walking away pulls it; a block sticks until the hero has strained for `push_breakaway`, then speeds up over `push_ramp` (weight); blocks fall, stack, and can be stood on | `push`, `push_*`, `pull_speed` |
 | Look | holding up or down while standing still (no movement) | |
+
+Boxes are the demo's, not the controller's: `demo/src/stage/push_pull.rs` is an
+`Ability` (walking into a resting box pushes it slowly; grab facing it holds it, walking
+away pulls it; it sticks until she has strained for `breakaway`, then speeds up over
+`ramp`), the boxes live in the demo's `Stage`, fall, and can be stood on. It is the
+example to copy for moves that change the world.
 
 "Diving" is the Hollow Knight downward plunge here; swimming is a different feature (see
 the [roadmap](roadmap.md)).

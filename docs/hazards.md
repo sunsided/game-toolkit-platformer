@@ -68,7 +68,7 @@ for _ in 0..120 {
         let (x, y) = hero.standing_at(r.x + r.w / 2, r.bottom());
         hero.set_spawn(x, y);
     }
-    if touching.contains(&Tile::Custom(SPRING)) && hero.world.player.grounded {
+    if touching.contains(&Tile::Custom(SPRING)) && hero.grounded() {
         hero.launch(0.0, -320.0);
     }
 }

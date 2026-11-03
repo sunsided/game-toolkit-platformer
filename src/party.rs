@@ -1,14 +1,13 @@
 //! [`Party`]: several characters on one terrain, on one clock.
 //!
 //! Separate [`Platformer`]s on the same terrain would each update it (so refills come back
-//! and boxes fall too fast), keep their own clocks, and pass through each other. A party
+//! and platforms move too fast), keep their own clocks, and pass through each other. A party
 //! steps all of them together: each moves, then the terrain updates once with every body,
 //! then moving ground (and the characters under them) carry them along.
 //!
 //! With [`Party::solid`] on (the default), the members block each other and stand on each
-//! other's heads, and a character standing on another rides along when it moves. Boxes
-//! fall onto any of them; a box a character shoves is stopped by the terrain and that
-//! character only.
+//! other's heads, and a character standing on another rides along when it moves. The
+//! terrain's update gets every body, so what falls or moves can stop at any of them.
 //!
 //! ```
 //! use game_toolkit_platformer::prelude::*;
@@ -26,7 +25,7 @@
 //! ```
 
 use crate::Platformer;
-use crate::platformer::steps;
+use crate::platformer::{Scaled, steps};
 use crate::sim::{DT, Intent, Rect, Terrain};
 
 /// Several characters on one terrain, stepped together.
@@ -71,9 +70,24 @@ impl Party {
     }
 
     /// Exactly one fixed step of [`DT`] for everyone (for your own clock, replays, tests).
+    /// The members share the first one's [`Platformer::scale`].
     pub fn step(&mut self, intents: &[Intent], terrain: &mut dyn Terrain) {
+        let k = self.members.first().map_or(1, Platformer::scale);
+        debug_assert!(
+            self.members.iter().all(|m| m.scale() == k),
+            "party members on one terrain share a scale"
+        );
+        if k == 1 {
+            self.step_in(intents, terrain);
+        } else {
+            self.step_in(intents, &mut Scaled { inner: terrain, k });
+        }
+    }
+
+    /// [`Party::step`] in a terrain that speaks units.
+    fn step_in(&mut self, intents: &[Intent], terrain: &mut dyn Terrain) {
         let n = self.members.len();
-        let before: Vec<Rect> = self.members.iter().map(|m| m.hitbox()).collect();
+        let before: Vec<Rect> = self.members.iter().map(|m| m.world.player.rect()).collect();
         // Who stands on whom, as the step starts.
         let carrier: Vec<Option<usize>> = (0..n)
             .map(|i| {
@@ -106,7 +120,7 @@ impl Party {
             let intent = intents.get(i).copied().unwrap_or_default();
             self.members[i].begin_step();
             self.members[i].world.act(&mut among, &intent);
-            now[i] = self.members[i].hitbox();
+            now[i] = self.members[i].world.player.rect();
         }
         terrain.update(DT, &now);
         // Carriers settle first, so their riders follow where they ended up.
@@ -120,7 +134,7 @@ impl Party {
                 others: others(i, &now),
             };
             self.members[i].world.settle(&mut among, extra);
-            now[i] = self.members[i].hitbox();
+            now[i] = self.members[i].world.player.rect();
         }
         for m in &mut self.members {
             m.end_step();
@@ -148,36 +162,12 @@ impl Terrain for Among<'_> {
         self.terrain.solid(r) || self.hits_other(r)
     }
 
-    fn solid_except(&self, r: Rect, skip: Option<usize>) -> bool {
-        self.terrain.solid_except(r, skip) || self.hits_other(r)
+    fn base(&self) -> Option<&dyn Terrain> {
+        Some(&*self.terrain)
     }
 
-    fn platform(&self, r: Rect) -> bool {
-        self.terrain.platform(r)
-    }
-
-    fn refill(&mut self, r: Rect) -> bool {
-        self.terrain.refill(r)
-    }
-
-    fn pushable(&self, r: Rect) -> Option<usize> {
-        self.terrain.pushable(r)
-    }
-
-    fn shove(&mut self, id: usize, dx: f32, hero: Rect) -> i32 {
-        self.terrain.shove(id, dx, hero)
-    }
-
-    fn fell_out(&self, r: Rect) -> bool {
-        self.terrain.fell_out(r)
-    }
-
-    fn update(&mut self, dt: f32, bodies: &[Rect]) {
-        self.terrain.update(dt, bodies);
-    }
-
-    fn carry(&self, r: Rect) -> (f32, f32) {
-        self.terrain.carry(r)
+    fn base_mut(&mut self) -> Option<&mut dyn Terrain> {
+        Some(&mut *self.terrain)
     }
 }
 
@@ -289,18 +279,37 @@ mod tests {
     }
 
     #[test]
-    fn boxes_land_on_any_member() {
-        // A box over the second character's head.
-        let mut level = Level::parse(&["....B..", ".......", ".......", ".......", "#######"]);
-        let a = Platformer::builder().spawn_standing(4, 32).build().unwrap();
+    fn abilities_reach_the_shared_terrain_through_the_others() {
+        use crate::sim::{Ability, Step, Tile};
+        /// Custom button 0 digs out the tile under the feet.
+        #[derive(Clone, Debug)]
+        struct Dig;
+        impl Ability for Dig {
+            fn before(&mut self, s: &mut Step<'_>) {
+                if s.intent.pressed(0) {
+                    let r = s.player.rect();
+                    let level = s.terrain.find_mut::<Level>().expect("behind the party");
+                    level.set((r.x + r.w / 2) / 8, r.bottom() / 8, Tile::Empty);
+                }
+            }
+        }
+        let mut level = Level::parse(&["........", "........", "........", "########"]);
+        let a = Platformer::builder()
+            .ability(Dig)
+            .spawn_standing(12, 24)
+            .build()
+            .unwrap();
         let b = Platformer::builder()
-            .spawn_standing(36, 32)
+            .spawn_standing(44, 24)
             .build()
             .unwrap();
         let mut p = Party::new(vec![a, b]);
-        for _ in 0..60 {
-            p.advance(&[], &mut level, 1.0 / 60.0);
-        }
-        assert_eq!(level.blocks[0].rect().bottom(), p.members[1].hitbox().y);
+        let dig = Intent {
+            custom_pressed: 1,
+            ..Intent::default()
+        };
+        p.step(&[dig], &mut level);
+        assert_eq!(level.tile(1, 3), Tile::Empty, "dug out");
+        assert_eq!(level.tile(5, 3), Tile::Solid);
     }
 }

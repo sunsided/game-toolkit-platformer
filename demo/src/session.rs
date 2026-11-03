@@ -11,10 +11,11 @@ pub mod wind;
 
 use std::collections::VecDeque;
 
-use crate::anim::{AnimEvent, Animator, Driver};
+use crate::anim::{AnimEvent, Animator, Driver, ParamId};
 use crate::hero::rig::{Air, Rig};
 use crate::hero::{HeroDriver, graph};
-use crate::sim::{DT, Event, Intent, Level, Mode, Preset, Tuning, World, player};
+use crate::sim::{DT, Event, Intent, Mode, Preset, Tuning, World, player};
+use crate::stage::{PushPull, Shove, Stage};
 pub use clock::Clock;
 pub use foliage::Foliage;
 pub use fx::{Fx, FxColor};
@@ -81,14 +82,17 @@ pub struct Keys {
 pub struct Session {
     /// The simulation.
     pub world: World,
-    /// The level the hero moves through (its crystals and boxes change as she plays).
-    pub level: Level,
-    /// The level as it was at the start, for a reset.
-    pub start: Level,
+    /// What the hero moves through (its crystals, boxes and lift change as she plays).
+    pub stage: Stage,
+    /// The stage as it was at the start, for a reset.
+    pub start: Stage,
     /// The hero's animation.
     pub animator: Animator,
     /// Sim facts to animation parameters.
     driver: HeroDriver,
+    /// The graph's box parameters, `pushing`, `pulling` and `holding`, which the demo
+    /// drives from its stage (the movement knows nothing of boxes).
+    box_params: [ParamId; 3],
     /// Fixed steps, slow motion, pause.
     pub clock: Clock,
     /// Presses seen since the last step, so slow motion doesn't drop them.
@@ -114,26 +118,35 @@ pub struct Session {
 }
 
 impl Session {
-    /// A session on the demo level with default tuning.
+    /// A session on the demo stage with default tuning.
     pub fn new() -> Self {
-        let mut s = Self::with(Level::demo(), Preset::Hybrid.tuning());
+        let mut s = Self::with(Stage::demo(), Preset::Hybrid.tuning());
         s.preset = Some(Preset::Hybrid);
         s
     }
 
-    /// A session on `level` with `tuning`.
-    pub fn with(level: Level, tuning: Tuning) -> Self {
-        let world = World::on(&level, tuning);
-        let foliage = Foliage::grow(&level);
+    /// A session on `stage` with `tuning`.
+    pub fn with(stage: Stage, tuning: Tuning) -> Self {
+        let mut world = World::on(&stage.level, tuning);
+        world.abilities.push(Box::new(PushPull::default()));
+        let foliage = Foliage::grow(&stage.level);
         let animator = Animator::new(graph());
         let driver = HeroDriver::new(&animator.params);
+        let id = |name| {
+            animator
+                .params
+                .id(name)
+                .expect("the hero graph has box states")
+        };
+        let box_params = [id("pushing"), id("pulling"), id("holding")];
         Self {
             prev: world.player.exact_pos(),
             world,
-            start: level.clone(),
-            level,
+            start: stage.clone(),
+            stage,
             animator,
             driver,
+            box_params,
             clock: Clock::default(),
             latch: Intent::default(),
             fx: Vec::new(),
@@ -160,13 +173,13 @@ impl Session {
             self.overlay = self.overlay.next();
         }
         if keys.reset {
-            let (level, tuning) = (self.start.clone(), self.world.tuning);
+            let (stage, tuning) = (self.start.clone(), self.world.tuning);
             *self = Self {
                 overlay: self.overlay,
                 clock: self.clock.clone(),
                 preset: self.preset,
                 skin: self.skin,
-                ..Self::with(level, tuning)
+                ..Self::with(stage, tuning)
             };
         }
         if keys.skin {
@@ -202,8 +215,23 @@ impl Session {
     pub fn step(&mut self, i: &Intent) {
         self.prev = self.world.player.exact_pos();
         self.last_intent = *i;
-        self.world.step(&mut self.level, i);
+        self.world.step(&mut self.stage, i);
+        if self.world.events.contains(&Event::Squished) {
+            // Caught between the lift and something solid.
+            self.world.respawn_at(self.world.spawn);
+        }
+        if self.world.events.contains(&Event::Respawned) {
+            // Fell out or squished: start over, not sliding there.
+            self.prev = self.world.player.exact_pos();
+            self.animator.reset();
+        }
         self.driver.drive(&self.world, &mut self.animator.params);
+        let shove = self.stage.grip.shove.map(|(s, _)| s);
+        let [push, pull, hold] = self.box_params;
+        let p = &mut self.animator.params;
+        p.set_bool(push, matches!(shove, Some(Shove::Push { .. })));
+        p.set_bool(pull, matches!(shove, Some(Shove::Pull { .. })));
+        p.set_bool(hold, matches!(shove, Some(Shove::Hold { .. })));
         self.animator.update(DT);
         let p = &self.world.player;
         let (x, y) = p.exact_pos();

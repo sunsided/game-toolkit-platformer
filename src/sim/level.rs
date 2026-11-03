@@ -1,52 +1,17 @@
 //! [`Level`]: a ready-made [`Terrain`]: a grid of tiles (solid, one-way platforms), dash
-//! refills, pushable boxes and a spawn point. Parse it from ASCII rows, build it from your
-//! own tilemap with [`Level::from_fn`], or implement [`Terrain`] for your own world instead.
+//! refills and a spawn point. Parse it from ASCII rows, build it from your own tilemap
+//! with [`Level::from_fn`], or implement [`Terrain`] for your own world instead.
 //!
 //! Tiles of your own ([`Tile::Custom`]: spikes, water, checkpoints) are air to the
 //! movement; [`Level::parse_with`] reads them from characters of your choosing and
-//! [`Level::tiles_touching`] finds the ones under the character. For more (state of your
-//! own beside the level), wrap it in your own struct and implement [`Terrain`] by
-//! forwarding to it. Forward [`Terrain::update`] too, or used refills never come back and
-//! boxes stop falling:
-//!
-//! ```
-//! use game_toolkit_platformer::sim::{Level, Rect, Terrain};
-//!
-//! struct Stage {
-//!     level: Level,
-//!     doors_open: bool,
-//! }
-//!
-//! impl Terrain for Stage {
-//!     fn solid(&self, r: Rect) -> bool {
-//!         self.level.solid(r)
-//!     }
-//!     fn solid_except(&self, r: Rect, skip: Option<usize>) -> bool {
-//!         self.level.solid_except(r, skip)
-//!     }
-//!     fn platform(&self, r: Rect) -> bool {
-//!         self.level.platform(r)
-//!     }
-//!     fn refill(&mut self, r: Rect) -> bool {
-//!         self.level.refill(r)
-//!     }
-//!     fn pushable(&self, r: Rect) -> Option<usize> {
-//!         self.level.pushable(r)
-//!     }
-//!     fn shove(&mut self, id: usize, dx: f32, hero: Rect) -> i32 {
-//!         self.level.shove(id, dx, hero)
-//!     }
-//!     fn fell_out(&self, r: Rect) -> bool {
-//!         self.level.fell_out(r)
-//!     }
-//!     fn update(&mut self, dt: f32, bodies: &[Rect]) {
-//!         self.level.update(dt, bodies);
-//!     }
-//! }
-//! # let _ = Stage { level: Level::demo(), doors_open: false }.doors_open;
-//! ```
+//! [`Level::tiles_touching`] finds the ones under the character. For more (doors, moving
+//! platforms, boxes: state of your own beside the level), wrap it in your own terrain with
+//! the level as its [`Terrain::base`], and write only what changes (see
+//! [`super::terrain`]).
 
-use super::{Block, Crystal, Rect, Terrain};
+use std::any::Any;
+
+use super::{Crystal, Rect, Terrain};
 
 /// Tile size in units.
 pub const TILE: i32 = 8;
@@ -67,7 +32,8 @@ const REFILL_BACK: f32 = 2.5;
 ///   rolls, hard landings, dives)
 /// - right: a low ceiling for corner corrections, a step up to a ledge over the pit, a
 ///   free pillar to climb, dash crystals between
-/// - blocks to push and pull: one on the floor between the chimneys, one on the ledge
+/// - `B`: places for boxes (the demo's own; [`Level::parse`] reads them as air): one on
+///   the floor between the chimneys, one on the ledge
 pub const DEMO: [&str; 27] = [
     "#..............................................#",
     "#..............................................#",
@@ -114,7 +80,7 @@ pub enum Tile {
     Custom(u8),
 }
 
-/// Tiles on a grid, with refills and boxes. Outside the grid, the sides and the top are
+/// Tiles on a grid, with refills. Outside the grid, the sides and the top are
 /// open air, and below the bottom the character falls out.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Level {
@@ -128,15 +94,13 @@ pub struct Level {
     pub spawn: (i32, i32),
     /// The dash refills.
     pub crystals: Vec<Crystal>,
-    /// The pushable boxes.
-    pub blocks: Vec<Block>,
     /// Seconds before a used refill comes back.
     pub refill_back: f32,
 }
 
 impl Level {
     /// Parse a level from tile rows (see [`DEMO`]): `#` solid, `=` one-way platform, `*`
-    /// dash refill, `B` box, `P` spawn, anything else air. Panics on ragged rows: levels
+    /// dash refill, `P` spawn, anything else air. Panics on ragged rows: levels
     /// written in code should fail loudly on a typo.
     pub fn parse(rows: &[&str]) -> Self {
         Self::parse_with(rows, |_| None)
@@ -182,7 +146,6 @@ impl Level {
                 match c {
                     'P' => level.spawn = at,
                     '*' => level.crystals.push(Crystal::at(at)),
-                    'B' => level.blocks.push(Block::at(at)),
                     _ => {}
                 }
             }
@@ -191,7 +154,7 @@ impl Level {
     }
 
     /// A `w` x `h` level whose tile at `x, y` is `tile(x, y)`: the way in from your own
-    /// tilemap. No refills, no boxes, the spawn at the top-left; add them as you like.
+    /// tilemap. No refills, the spawn at the top-left; add them as you like.
     pub fn from_fn(w: i32, h: i32, tile: impl Fn(i32, i32) -> Tile) -> Self {
         let tiles = (0..h)
             .flat_map(|y| (0..w).map(move |x| (x, y)))
@@ -203,7 +166,6 @@ impl Level {
             tiles,
             spawn: (1, 1),
             crystals: Vec::new(),
-            blocks: Vec::new(),
             refill_back: REFILL_BACK,
         }
     }
@@ -252,20 +214,14 @@ impl Level {
         self.tile(tx, ty) == Tile::Solid
     }
 
-    /// Whether `r` overlaps any solid tile or box (platforms don't count).
+    /// Whether `r` overlaps any solid tile (platforms don't count).
     pub fn overlaps(&self, r: Rect) -> bool {
-        self.overlaps_except(r, None)
-    }
-
-    /// Whether `r` overlaps any solid tile or box other than box `skip`.
-    pub fn overlaps_except(&self, r: Rect, skip: Option<usize>) -> bool {
         let (tx0, ty0) = (r.x.div_euclid(TILE), r.y.div_euclid(TILE));
         let (tx1, ty1) = (
             (r.right() - 1).div_euclid(TILE),
             (r.bottom() - 1).div_euclid(TILE),
         );
         (ty0..=ty1).any(|ty| (tx0..=tx1).any(|tx| self.solid_tile(tx, ty)))
-            || Block::any_except(&self.blocks, r, skip)
     }
 
     /// Whether `r` stands exactly on top of a one-way platform.
@@ -289,10 +245,6 @@ impl Terrain for Level {
         self.overlaps(r)
     }
 
-    fn solid_except(&self, r: Rect, skip: Option<usize>) -> bool {
-        self.overlaps_except(r, skip)
-    }
-
     fn platform(&self, r: Rect) -> bool {
         self.on_platform(r)
     }
@@ -312,31 +264,18 @@ impl Terrain for Level {
         }
     }
 
-    fn pushable(&self, r: Rect) -> Option<usize> {
-        Block::pushable(&self.blocks, r)
-    }
-
-    fn shove(&mut self, id: usize, dx: f32, hero: Rect) -> i32 {
-        // Take the box out while it moves, so it doesn't collide with itself.
-        let mut b = self.blocks[id];
-        let moved = b.shove(self, id, hero, dx);
-        self.blocks[id] = b;
-        moved
-    }
-
     fn fell_out(&self, r: Rect) -> bool {
         r.y > self.floor_y() + 4 * TILE
     }
 
-    fn update(&mut self, dt: f32, bodies: &[Rect]) {
+    fn update(&mut self, dt: f32, _bodies: &[Rect]) {
         for c in &mut self.crystals {
             c.cooldown = (c.cooldown - dt).max(0.0);
         }
-        for i in 0..self.blocks.len() {
-            let mut b = self.blocks[i];
-            b.fall(self, i, bodies, dt);
-            self.blocks[i] = b;
-        }
+    }
+
+    fn as_any_mut(&mut self) -> Option<&mut dyn Any> {
+        Some(self)
     }
 }
 
@@ -353,7 +292,7 @@ mod tests {
         assert!(l.solid_tile(sx, sy + 1));
         assert_eq!(l.crystals.len(), 3);
         assert_eq!(l.spawn, (11, 24));
-        assert_eq!(l.blocks.len(), 2);
+        assert_eq!(l.tile(21, 24), Tile::Empty, "box places are air");
     }
 
     #[test]

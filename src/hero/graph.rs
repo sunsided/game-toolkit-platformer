@@ -121,6 +121,7 @@ pub fn spec() -> GraphSpec {
         .bool("wall_slide")
         .bool("hard_landing")
         .bool("wings")
+        // Not driven by the movement: a game with boxes sets these (the demo does).
         .bool("pushing")
         .bool("pulling")
         .bool("holding")
@@ -442,7 +443,8 @@ pub fn spec() -> GraphSpec {
         .transition(TransitionSpec::new(["wall_slide"], "fall", not("wall_slide")).priority(40))
         // Ground.
         .transition(TransitionSpec::new(GROUND, "fall", not("grounded")).priority(30))
-        // Blocks: whichever the body does now; standing still again when it lets go.
+        // Boxes, for a game that has them: whichever the body does now; standing still
+        // again when it lets go.
         .transition(TransitionSpec::new(GROUND, "push", is("pushing")).priority(25))
         .transition(TransitionSpec::new(GROUND, "pull", is("pulling")).priority(25))
         .transition(TransitionSpec::new(GROUND, "box_hold", is("holding")).priority(25))

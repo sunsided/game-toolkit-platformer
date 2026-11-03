@@ -11,7 +11,7 @@ use platformer_demo::gfx::font::{self, Font};
 use platformer_demo::gfx::{Canvas, H, Raster, W, palette as pal, png};
 use platformer_demo::render::{Paint, backdrop, mouse};
 use platformer_demo::session::{Overlay, Session};
-use platformer_demo::sim::{Intent, Preset, TILE, player};
+use platformer_demo::sim::{Intent, Preset, TILE, Terrain, player};
 
 /// Steps between onion-skin copies.
 const EVERY: usize = 5;
@@ -67,7 +67,7 @@ fn wall_near(w: &Session) -> i32 {
     let r = w.world.player.rect();
     [-1, 1]
         .into_iter()
-        .find(|&s| (1..=2).any(|d| w.level.overlaps(r.shifted(s * d, 0))))
+        .find(|&s| (1..=2).any(|d| w.stage.solid(r.shifted(s * d, 0))))
         .unwrap_or(0)
 }
 
@@ -356,7 +356,7 @@ fn main() {
             p.y = y;
             p.peak_y = y;
         }
-        let mut canvas = backdrop(&s.level);
+        let mut canvas = backdrop(&s.stage.level);
         let mut seen: Vec<String> = Vec::new();
         for k in 0..sc.steps {
             let i = (sc.intent)(k, &s);

@@ -296,17 +296,6 @@ pub struct Tuning {
     /// Horizontal speed needed for a roll from a run.
     pub run_roll_speed: f32,
 
-    /// Blocks can be pushed (walk into them) and pulled (grab, walk away).
-    pub push: bool,
-    /// Walking speed pushing a block.
-    pub push_speed: f32,
-    /// Walking speed pulling a block.
-    pub pull_speed: f32,
-    /// Seconds of straining before a block budges (static friction: weight).
-    pub push_breakaway: f32,
-    /// Seconds from budging to full push or pull speed.
-    pub push_ramp: f32,
-
     /// Presentation: air jumps flap wings (Hollow Knight's Monarch Wings) instead of a
     /// flip. Read by the hero's animation driver, not by the movement.
     pub wings: bool,
@@ -418,12 +407,6 @@ impl Default for Tuning {
 
             run_roll: true,
             run_roll_speed: 100.0,
-
-            push: true,
-            push_speed: 40.0,
-            pull_speed: 30.0,
-            push_breakaway: 0.25,
-            push_ramp: 0.3,
 
             wings: false,
 
