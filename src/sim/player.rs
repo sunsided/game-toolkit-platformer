@@ -219,6 +219,12 @@ impl Player {
         }
     }
 
+    /// The hitbox's top-left (units) for a body standing on `floor_y` (the top of the
+    /// ground), centered on `foot_x`: a spawn point on a terrain of your own.
+    pub fn standing_at(foot_x: i32, floor_y: i32) -> (i32, i32) {
+        (foot_x - (W + 1) / 2, floor_y - H)
+    }
+
     /// Set the speed from outside: a spring, a bounce pad, knockback. Whatever the body was
     /// busy with ends (a dash, a dive, a climb), a jump in progress can no longer be
     /// sustained or cut, and going up leaves the ground for good (no coyote jump).

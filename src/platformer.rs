@@ -28,7 +28,7 @@ use crate::anim::{AnimEvent, Animator, Driver, GraphSpec, SpecError};
 #[cfg(feature = "toolkit")]
 use crate::controls::{Controls, Scheme};
 use crate::hero::{HeroDriver, spec};
-use crate::sim::{DT, Event, Intent, Level, Preset, Rect, Terrain, Tuning, World, player};
+use crate::sim::{DT, Event, Intent, Level, Player, Preset, Rect, TILE, Terrain, Tuning, World};
 
 /// At most this many fixed steps per frame, so a hitch doesn't spiral.
 const MAX_STEPS: u32 = 8;
@@ -59,6 +59,20 @@ pub struct Platformer {
     pub controls: Controls,
 }
 
+/// Where a [`Builder`] puts the character.
+#[derive(Clone, Copy, Debug)]
+enum Spawn {
+    /// The hitbox's top-left, units.
+    At(i32, i32),
+    /// Standing on `floor`, centered on `x` (units).
+    Standing {
+        /// The feet's center.
+        x: i32,
+        /// The top of the ground.
+        floor: i32,
+    },
+}
+
 /// Sets up a [`Platformer`]: preset, tuning, controls, animation graph, spawn point.
 pub struct Builder {
     /// The movement feel.
@@ -67,8 +81,8 @@ pub struct Builder {
     preset: Option<Preset>,
     /// A custom animation graph, or the built-in one.
     graph: Option<GraphSpec>,
-    /// Where to start (hitbox top-left, units).
-    spawn: (i32, i32),
+    /// Where to start.
+    spawn: Spawn,
     /// Put it back at the start after falling out.
     respawn: bool,
     /// The control scheme, or the preset's.
@@ -106,13 +120,21 @@ impl Builder {
 
     /// Start with the hitbox's top-left at `x, y` (units).
     pub fn spawn_at(mut self, x: i32, y: i32) -> Self {
-        self.spawn = (x, y);
+        self.spawn = Spawn::At(x, y);
+        self
+    }
+
+    /// Start standing on the ground at height `floor_y` (its top edge), centered on `x`
+    /// (units): the way to spawn on a [`Terrain`] of your own.
+    pub fn spawn_standing(mut self, x: i32, floor_y: i32) -> Self {
+        self.spawn = Spawn::Standing { x, floor: floor_y };
         self
     }
 
     /// Start standing on `level`'s spawn tile.
     pub fn spawn_on(mut self, level: &Level) -> Self {
-        self.spawn = level.spawn_point(player::W, player::H);
+        let (tx, ty) = level.spawn;
+        self = self.spawn_standing(tx * TILE + TILE / 2, (ty + 1) * TILE);
         self
     }
 
@@ -135,7 +157,11 @@ impl Builder {
         let graph = self.graph.unwrap_or_else(spec).compile()?;
         let animator = Animator::new(Arc::new(graph));
         let driver = HeroDriver::try_new(&animator.params)?;
-        let mut world = World::new(self.tuning, self.spawn);
+        let spawn = match self.spawn {
+            Spawn::At(x, y) => (x, y),
+            Spawn::Standing { x, floor } => Player::standing_at(x, floor),
+        };
+        let mut world = World::new(self.tuning, spawn);
         world.respawn = self.respawn;
         Ok(Platformer {
             prev: world.player.exact_pos(),
@@ -168,7 +194,8 @@ impl Platformer {
     }
 
     /// A character with its hitbox's top-left at `x, y` (units), otherwise like
-    /// [`Platformer::on`].
+    /// [`Platformer::on`]. On a terrain of your own, [`Builder::spawn_standing`] works out
+    /// the top-left from where the feet go.
     pub fn at(x: i32, y: i32, preset: Preset) -> Self {
         Self::builder()
             .preset(preset)
@@ -183,7 +210,7 @@ impl Platformer {
             tuning: Preset::Hybrid.tuning(),
             preset: Some(Preset::Hybrid),
             graph: None,
-            spawn: (0, 0),
+            spawn: Spawn::At(0, 0),
             respawn: true,
             #[cfg(feature = "toolkit")]
             scheme: None,
@@ -308,6 +335,13 @@ impl Platformer {
         self.events.push(Event::Respawned);
         self.prev = self.world.player.exact_pos();
         self.animator.reset();
+    }
+
+    /// The hitbox's top-left (units) for this character standing on `floor_y` (the top of
+    /// the ground), centered on `x`: for [`Platformer::set_spawn`],
+    /// [`Platformer::teleport`] and [`Platformer::respawn_at`] on a terrain of your own.
+    pub fn standing_at(&self, x: i32, floor_y: i32) -> (i32, i32) {
+        Player::standing_at(x, floor_y)
     }
 
     /// Where [`Platformer::respawn`] (and falling out) puts the character from now on
@@ -507,6 +541,26 @@ mod tests {
             (p.dashes, p.air_jumps, p.stamina),
             (t.dashes, t.air_jumps, t.stamina)
         );
+    }
+
+    #[test]
+    fn spawning_standing_on_a_custom_floor_or_a_level_tile() {
+        let mut hero = Platformer::builder()
+            .spawn_standing(50, 100)
+            .build()
+            .unwrap();
+        let r = hero.hitbox();
+        assert_eq!((r.bottom(), r.x + r.w / 2), (100, 50));
+        let events = idle(&mut hero);
+        assert!(hero.world.player.grounded, "stands at once");
+        assert!(events.is_empty(), "no fall, no landing: {events:?}");
+        assert_eq!(hero.standing_at(50, 100), (r.x, r.y));
+
+        // On a level, the same as the level's own spawn point.
+        let level = Level::demo();
+        let hero = Platformer::on(&level, Preset::Hybrid);
+        let (x, y) = level.spawn_point(crate::sim::player::W, crate::sim::player::H);
+        assert_eq!((hero.hitbox().x, hero.hitbox().y), (x, y));
     }
 
     #[test]

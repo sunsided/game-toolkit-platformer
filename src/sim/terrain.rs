@@ -6,6 +6,10 @@
 //! for 8-unit tiles. If your tiles are 16 pixels, divide by two on the way in (or use
 //! [`super::Level`], which already speaks units).
 //!
+//! To start the character standing on your ground, give the builder the feet's position:
+//! `Platformer::builder().spawn_standing(x, floor_y)` (or `Player::standing_at` for the
+//! hitbox's top-left).
+//!
 //! The smallest terrain is a closure:
 //!
 //! ```
